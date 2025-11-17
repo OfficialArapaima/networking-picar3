@@ -1,15 +1,36 @@
 from socket import *
 
-serverName = input('Input the PiCar\'s server address:')
+manual = '''
+Press keys on keyboard to control PiCar-X!
+    w: Forward
+    a: Turn left
+    s: Backward
+    d: Turn right
+    ctrl+c: Quit
+'''
 
-serverPort = 12000
-clientSocket = socket(AF_INET, SOCK_STREAM)
-clientSocket.connect((serverName, serverPort))
+def show_info():
+    print(manual)
 
-sentence = input('Input lowercase sentence:')
+def client_connection():
+    serverName = input('Input the PiCar\'s server address:')
 
-clientSocket.send(sentence.encode())
-modifiedSentence = clientSocket.recv(1024)
-print('From Server: ', modifiedSentence.decode())
+    serverPort = 12000
+    clientSocket = socket(AF_INET, SOCK_STREAM)
+    clientSocket.connect((serverName, serverPort))
 
-clientSocket.close()
+
+def main():
+    while True:
+        key = input('Input lowercase sentence:')
+        if key in ('wsad'):           
+            clientSocket.send(key.encode())
+            modifiedSentence = clientSocket.recv(1024)
+            print('From Server: ', modifiedSentence.decode())
+
+def close_connection():
+    clientSocket.close()
+
+client_connection()
+main()
+close_connection()
