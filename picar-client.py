@@ -1,5 +1,6 @@
 from socket import *
 
+
 manual = '''
 Press keys on keyboard to control PiCar-X!
     w: Forward
@@ -12,7 +13,8 @@ Press keys on keyboard to control PiCar-X!
 def show_info():
     print(manual)
 
-def client_connection():
+
+def main():
     serverName = input('Input the PiCar\'s server address:')
 
     serverPort = 12000
@@ -20,17 +22,13 @@ def client_connection():
     clientSocket.connect((serverName, serverPort))
 
 
-def main():
     while True:
         key = input('Input lowercase sentence:')
-        if key in ('wsad'):           
+        if key in ('wsad'):
             clientSocket.send(key.encode())
             modifiedSentence = clientSocket.recv(1024)
             print('From Server: ', modifiedSentence.decode())
-
-def close_connection():
+            
     clientSocket.close()
 
-client_connection()
 main()
-close_connection()
