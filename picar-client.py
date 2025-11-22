@@ -24,6 +24,8 @@ def main():
 
     while True:
         key = input('Input lowercase sentence:')
+        if key == "exit":
+               break
         if key in ('wsad'):
             clientSocket.send(key.encode())
             modifiedSentence = clientSocket.recv(1024)
