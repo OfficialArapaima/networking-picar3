@@ -1,4 +1,5 @@
 from socket import *
+from PySide6 import QtCore, QtWidgets, QtGui
 
 serverName = input('Input the PiCar\'s server address:')
 
