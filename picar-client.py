@@ -1,5 +1,6 @@
 from socket import *
-
+from time import sleep
+import readchar
 
 manual = '''
 Press keys on keyboard to control PiCar-X!
@@ -21,15 +22,36 @@ def main():
     clientSocket = socket(AF_INET, SOCK_STREAM)
     clientSocket.connect((serverName, serverPort))
 
+# make the car move when single key is pressed continuously
+
 
     while True:
-        key = input('Input lowercase sentence:')
+        key = readchar.readkey()
+        key = key.lower()
         if key == "exit":
-               break
+            break
         if key in ('wsad'):
-            clientSocket.send(key.encode())
-            modifiedSentence = clientSocket.recv(1024)
-            print('From Server: ', modifiedSentence.decode())
+            if 'w' in key:        
+                clientSocket.send(key.encode())
+                modifiedSentence = clientSocket.recv(1024)
+                print('From Server: ', modifiedSentence.decode())
+            if 's' in key:        
+                clientSocket.send(key.encode())
+                modifiedSentence = clientSocket.recv(1024)
+                print('From Server: ', modifiedSentence.decode())
+            if 'a' in key:        
+                clientSocket.send(key.encode())
+                modifiedSentence = clientSocket.recv(1024)
+                print('From Server: ', modifiedSentence.decode())
+            if 'd' in key:        
+                clientSocket.send(key.encode())
+                modifiedSentence = clientSocket.recv(1024)
+                print('From Server: ', modifiedSentence.decode())
+        elif key == readchar.key.CTRL_C:
+                print("\n Quit")
+                break
+
+
             
     clientSocket.close()
 
