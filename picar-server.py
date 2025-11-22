@@ -1,5 +1,6 @@
 import sys
 from socket import *
+from picarx import Picarx
 serverPort = 12000
 
 # bind the server to the socket
@@ -10,15 +11,28 @@ serverSocket.listen(1)
 print('The server is now listening...\n')
 connectionSocket, addr = serverSocket.accept()
 
-
+px = Picarx()
 while True:
     print('New connection from %s:%d' % (addr[0], addr[1]))
     data = connectionSocket.recv(1024).decode()
     if not data:
         break
-    elif data == 'killsrv':
-        connectionSocket.close()
+    if 'w' in data:
+        px.set_dir_servo_angle(0)
+        px.forward(80)
+    elif 's' == data:
+        px.set_dir_servo_angle(0)
+        px.backward(80)
+    elif 'a' == data:
+        px.set_dir_servo_angle(-35)
+        px.forward(80)
+    elif 'd' == data:
+        px.set_dir_servo_angle(35)
+        px.forward(80)
+    elif data == 'q':
+        px.stop()
         sys.exit()
+        connectionSocket.close()
     else:
        print(data)
 
