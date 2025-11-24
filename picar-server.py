@@ -20,6 +20,7 @@ target_angle = 0;
 running = True;
 
 def steering_loop():
+    global current_angle, target_angle, running
     while running:
         if current_angle < target_angle:
             current_angle += 1
@@ -30,6 +31,7 @@ def steering_loop():
         time.sleep(0.005)
 
 def server_loop():
+    global current_angle, target_angle, running
     while running:
         data = connectionSocket.recv(1024).decode()
         match data:
