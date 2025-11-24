@@ -1,4 +1,4 @@
-import sys
+import threading
 import time
 from socket import *
 from picarx import Picarx
@@ -14,60 +14,46 @@ connectionSocket, addr = serverSocket.accept()
 
 px = Picarx()
 
-while True:
-    data = connectionSocket.recv(1024).decode()
-    match data:
-        case 'start forward':
-            px.forward(80)
-        case 'start backward':
-            px.backward(80)
-        case 'start left':
-            for i in range(35):
-                px.set_dir_servo_angle(-i)
-                time.sleep(0.005)
-        case 'start right':
-            for i in range(35):
-                px.set_dir_servo_angle(i)
-                time.sleep(0.005)
-        case 'stop forward':
-            px.forward(0)
-        case 'stop backward':
-            px.forward(0)
-        case 'stop left':
-            for i in range(35):
-                px.set_dir_servo_angle(-34 + i)
-                time.sleep(0.005)
-                
-        case 'stop right':
-            for i in range(35):
-                px.set_dir_servo_angle(34 - i)
-                time.sleep(0.005)
-        
-    connectionSocket.send(data.encode())
+# set up global variables needed
+current_angle = 0;
+target_angle = 0;
+running = True;
 
-# while True:
-#     print('New connection from %s:%d' % (addr[0], addr[1]))
-#     data = connectionSocket.recv(1024).decode()
-#     if not data:
-#         break
-#     if 'w' in data:
-#         px.set_dir_servo_angle(0)
-#         px.forward(80)
-#     elif 's' == data:
-#         px.set_dir_servo_angle(0)
-#         px.backward(80)
-#     elif 'a' == data:
-#         px.set_dir_servo_angle(-35)
-#         px.forward(80)
-#     elif 'd' == data:
-#         px.set_dir_servo_angle(35)
-#         px.forward(80)
-#     elif data == 'q':
-#         px.stop()
-#         sys.exit()
-#         connectionSocket.close()
-#     else:
-#        print(data)
+def steering_loop():
+    while running:
+        if current_angle < target_angle:
+            current_angle += 1
+        elif current_angle > target_angle:
+            current_angle -= 1
+
+        px.set_dir_servo_angle(current_angle)
+        time.sleep(0.005)
+
+def server_loop():
+    while running:
+        data = connectionSocket.recv(1024).decode()
+        match data:
+            case 'start forward':
+                px.forward(80)
+            case 'start backward':
+                px.backward(80)
+            case 'start left':
+                target_angle = -35
+            case 'start right':
+                target_angle = 35
+            case 'stop forward':
+                px.forward(0)
+            case 'stop backward':
+                px.forward(0)
+            case 'stop left' | 'stop right':
+                target_angle = 0
+            
+        connectionSocket.send(data.encode())
+
+def main():
+    steer_thread = threading.Thread(target=steering_loop, daemon=True)
+    steer_thread.start()
+    server_loop()
 
     
 connectionSocket.close()
