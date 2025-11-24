@@ -24,11 +24,11 @@ while True:
         case 'start left':
             for i in range(35):
                 px.set_dir_servo_angle(-i)
-                time.sleep(0.1)
+                time.sleep(0.005)
         case 'start right':
             for i in range(35):
                 px.set_dir_servo_angle(i)
-                time.sleep(0.001)
+                time.sleep(0.005)
         case 'stop forward':
             px.forward(0)
         case 'stop backward':
@@ -36,12 +36,12 @@ while True:
         case 'stop left':
             for i in range(35):
                 px.set_dir_servo_angle(-34 + i)
-                time.sleep(0.001)
+                time.sleep(0.005)
                 
         case 'stop right':
             for i in range(35):
                 px.set_dir_servo_angle(34 - i)
-                time.sleep(0.001)
+                time.sleep(0.005)
         
     connectionSocket.send(data.encode())
 
