@@ -1,6 +1,5 @@
 from socket import *
 from time import sleep
-import readchar
 
 manual = '''
 Press keys on keyboard to control PiCar-X!
