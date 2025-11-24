@@ -22,26 +22,26 @@ while True:
         case 'start backward':
             px.backward(80)
         case 'start left':
-            for i in range(7):
-                px.set_dir_servo_angle(-i * 5 - 5)
+            for i in range(35):
+                px.set_dir_servo_angle(-i)
                 time.sleep(0.1)
         case 'start right':
-            for i in range(7):
-                px.set_dir_servo_angle(i * 5 + 5)
-                time.sleep(0.1)
+            for i in range(35):
+                px.set_dir_servo_angle(i)
+                time.sleep(0.001)
         case 'stop forward':
             px.forward(0)
         case 'stop backward':
             px.forward(0)
         case 'stop left':
-            for i in range(7):
-                px.set_dir_servo_angle(-35 + 5 * i)
-                time.sleep(0.1)
+            for i in range(35):
+                px.set_dir_servo_angle(-34 + i)
+                time.sleep(0.001)
                 
         case 'stop right':
-            for i in range(7):
-                px.set_dir_servo_angle(35 - 5 * i)
-                time.sleep(0.1)
+            for i in range(35):
+                px.set_dir_servo_angle(34 - i)
+                time.sleep(0.001)
         
     connectionSocket.send(data.encode())
 
