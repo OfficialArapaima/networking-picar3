@@ -55,5 +55,5 @@ def main():
     steer_thread.start()
     server_loop()
 
-    
-connectionSocket.close()
+main()  
+# connectionSocket.close()
