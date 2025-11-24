@@ -9,6 +9,8 @@ Press keys on keyboard to control PiCar-X!
     s: Backward
     d: Turn right
     ctrl+c: Quit
+Input key to call the funtion!
+    f: Turn on/off face detection
 '''
 
 def show_info():
@@ -22,6 +24,10 @@ def main():
     clientSocket = socket(AF_INET, SOCK_STREAM)
     clientSocket.connect((serverName, serverPort))
 
+    # Starts the camera 
+    Vilib.camera_start(vflip=False,hflip=False)
+    Vilib.display(local=True,web=True)
+
 # make the car move when single key is pressed continuously
 
 
@@ -30,7 +36,7 @@ def main():
         key = key.lower()
         if key == "exit":
             break
-        if key in ('wsad'):
+        if key in ('wsadf'):
             if 'w' in key:        
                 clientSocket.send(key.encode())
                 modifiedSentence = clientSocket.recv(1024)
@@ -47,6 +53,13 @@ def main():
                 clientSocket.send(key.encode())
                 modifiedSentence = clientSocket.recv(1024)
                 print('From Server: ', modifiedSentence.decode())
+            if 'f' in key:
+                clientSocket.send(key.encode())
+                modifiedSentence = clientSocket.recv(1024)
+                print('From Server: ', modifiedSentence.decode())
+
+        
+
         elif key == readchar.key.CTRL_C:
                 print("\n Quit")
                 break
