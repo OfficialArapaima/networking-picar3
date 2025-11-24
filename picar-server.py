@@ -1,4 +1,5 @@
 import sys
+import time
 from socket import *
 from picarx import Picarx
 serverPort = 12000
@@ -23,19 +24,24 @@ while True:
         case 'start left':
             for i in range(7):
                 px.set_dir_servo_angle(-i * 5 - 5)
+                time.sleep(0.1)
         case 'start right':
             for i in range(7):
                 px.set_dir_servo_angle(i * 5 + 5)
+                time.sleep(0.1)
         case 'stop forward':
             px.forward(0)
         case 'stop backward':
             px.forward(0)
         case 'stop left':
             for i in range(7):
-                px.set_dir_servo_angle(-i * 5 - 5)
+                px.set_dir_servo_angle(-35 + 5 * i)
+                time.sleep(0.1)
+                
         case 'stop right':
             for i in range(7):
-                px.set_dir_servo_angle(i * 5 + 5)
+                px.set_dir_servo_angle(35 - 5 * i)
+                time.sleep(0.1)
         
     connectionSocket.send(data.encode())
 
