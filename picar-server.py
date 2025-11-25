@@ -23,12 +23,12 @@ def steering_loop():
     global current_angle, target_angle, running, px
     while running:
         if current_angle < target_angle:
-            current_angle += 1
+            current_angle += 0.5
         elif current_angle > target_angle:
-            current_angle -= 1
+            current_angle -= 0.5
 
         px.set_dir_servo_angle(current_angle)
-        time.sleep(0.005)
+        time.sleep(0.001)
 
 def server_loop():
     global target_angle, running, px
