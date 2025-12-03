@@ -1,0 +1,9 @@
+# Server requirements (Raspberry Pi)
+opencv-python>=4.5.0
+numpy>=1.19.0
+
+# Client requirements
+readchar>=3.0.0
+
+# Note: picarx library should be pre-installed on the PiCar-X hardware
+
