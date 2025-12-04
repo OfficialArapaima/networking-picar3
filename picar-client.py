@@ -11,7 +11,13 @@ Press keys on keyboard to control PiCar-X!
     a: Turn left
     s: Backward
     d: Turn right
-    f: Toggle face detection ON/OFF
+    
+    Detection modes (car will scan and auto-capture):
+    f: Toggle FACE detection scanning
+    c: Toggle COLOR detection scanning (cycles: red->orange->yellow->green->blue->purple)
+    r: Toggle QR CODE detection scanning
+    p: Take a manual photo
+    
     q: Quit (stops car)
     ctrl+c: Quit (stops car)
 '''
@@ -144,12 +150,14 @@ def main():
                 if key == "exit":
                     break
                     
-                if key in ('wsadfq'):
+                if key in ('wsadfqcrp'):
                     clientSocket.send(key.encode())
                     if key == 'q':
                         print("\nStopping car and quitting...")
                         sleep(0.5)  # Give server time to process
                         break
+                    elif key == 'p':
+                        print("Taking manual photo...")
                         
                 elif key == readchar.key.CTRL_C:
                     break

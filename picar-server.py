@@ -2,7 +2,7 @@ import sys
 import os
 from socket import *
 from picarx import Picarx
-import cv2
+from vilib import Vilib
 from datetime import datetime
 import threading
 import time
@@ -10,126 +10,152 @@ import struct
 
 serverPort = 12000
 
-# Face detection settings
-face_detection_enabled = False
-scanning_paused = False  # Pause scanning when face detected
-scan_lock = threading.Lock()  # Thread synchronization for scanning_paused
+# Detection settings
+detection_enabled = False
+scanning_paused = False
+scan_lock = threading.Lock()
+last_detection_time = 0
+detection_cooldown = 3  # seconds between captures
 
-# Load face cascade with cross-platform compatibility
-def load_face_cascade():
-    """Load Haar cascade with fallback paths for cross-platform support"""
-    cascade_paths = []
-    
-    # Try cv2.data.haarcascades first (cross-platform, works with pip-installed OpenCV)
-    if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
-        cascade_paths.append(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    
-    # Fallback paths for system-installed OpenCV on Linux
-    cascade_paths.extend([
-        '/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml',
-        '/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml',
-        '/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml',
-    ])
-    
-    for path in cascade_paths:
-        if os.path.exists(path):
-            cascade = cv2.CascadeClassifier(path)
-            if not cascade.empty():
-                print(f"Face cascade loaded from: {path}")
-                return cascade
-    
-    print("ERROR: Could not load face cascade classifier!")
-    print("Please install opencv-python: pip3 install opencv-python")
-    return cv2.CascadeClassifier()  # Return empty classifier
+# Detection modes
+DETECT_FACE = 'face'
+DETECT_COLOR = 'color'
+DETECT_QR = 'qr'
+current_detect_mode = DETECT_FACE
+current_color = 'red'
 
-face_cascade = load_face_cascade()
-camera = None
-last_face_detected_time = 0
-face_detection_cooldown = 3  # seconds between captures (give time to resume scanning)
+color_list = ['red', 'orange', 'yellow', 'green', 'blue', 'purple']
+
 connectionSocket = None
 
 # Scanning settings
-SCAN_SPEED = 20  # Slow rotation speed
-TILT_MIN = -20   # Camera looks down
-TILT_MAX = 20    # Camera looks up
-TILT_STEP = 5    # Degrees per step
-tilt_direction = 1  # 1 = going up, -1 = going down
+SCAN_SPEED = 20
+TILT_MIN = -20
+TILT_MAX = 20
+TILT_STEP = 5
+tilt_direction = 1
 current_tilt = 0
 
-px = None  # Global PiCar reference
+px = None
+camera_started = False
 
 
 def initialize_camera():
-    """Initialize the camera using V4L2 backend (more reliable on Raspberry Pi)"""
-    global camera
-    if camera is None:
-        # Use V4L2 backend instead of GStreamer to avoid memory issues
-        camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
-        
-        # Set lower resolution for better performance on Pi
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-        camera.set(cv2.CAP_PROP_FPS, 15)  # Lower FPS for stability
-        camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to save memory
-        
+    """Initialize the camera using Vilib"""
+    global camera_started
+    if not camera_started:
+        Vilib.camera_start(vflip=False, hflip=False)
         time.sleep(1)
-        
-        # Verify camera is actually working
-        if camera.isOpened():
-            ret, test_frame = camera.read()
-            if ret:
-                print("Camera initialized successfully (320x240 @ 15fps)")
-            else:
-                print("WARNING: Camera opened but cannot read frames!")
-        else:
-            print("ERROR: Failed to open camera!")
-    return camera
+        print("Camera initialized with Vilib")
+        camera_started = True
 
 
-def send_image_to_client(frame, timestamp, num_faces):
-    """Send image to client over socket"""
-    global connectionSocket
+def set_detection_mode(mode, color=None):
+    """Set the detection mode (face, color, or qr)"""
+    global current_detect_mode, current_color
+    
+    # Turn off all detection first
+    Vilib.face_detect_switch(False)
+    Vilib.color_detect('close')
+    Vilib.qrcode_detect_switch(False)
+    
+    current_detect_mode = mode
+    
+    if mode == DETECT_FACE:
+        Vilib.face_detect_switch(True)
+        print("Face detection enabled")
+    elif mode == DETECT_COLOR:
+        if color:
+            current_color = color
+        Vilib.color_detect(current_color)
+        print(f"Color detection enabled: {current_color}")
+    elif mode == DETECT_QR:
+        Vilib.qrcode_detect_switch(True)
+        print("QR code detection enabled")
 
-    if connectionSocket is None:
-        return False
 
-    try:
-        ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        if not ret:
+def take_and_send_photo(reason="detection"):
+    """Take a photo and send it to the client"""
+    global connectionSocket, last_detection_time
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    username = os.getlogin()
+    photo_path = f"/home/{username}/Pictures/"
+    photo_name = f"capture_{timestamp}"
+    
+    # Take photo using Vilib
+    Vilib.take_photo(photo_name, photo_path)
+    full_path = f"{photo_path}{photo_name}.jpg"
+    
+    print(f"Photo taken: {full_path} ({reason})")
+    
+    # Read and send the photo to client
+    time.sleep(0.3)  # Wait for file to be written
+    
+    if os.path.exists(full_path):
+        try:
+            with open(full_path, 'rb') as f:
+                img_bytes = f.read()
+            
+            img_size = len(img_bytes)
+            header = b"IMG" + timestamp.encode('utf-8') + struct.pack('>I', img_size)
+            connectionSocket.sendall(header + img_bytes)
+            print(f"Image sent to client: {timestamp} ({img_size} bytes)")
+            last_detection_time = time.time()
+            return True
+        except Exception as e:
+            print(f"Error sending image: {e}")
             return False
-
-        img_bytes = buffer.tobytes()
-        img_size = len(img_bytes)
-
-        header = b"IMG" + timestamp.encode('utf-8') + struct.pack('>I', img_size)
-        connectionSocket.sendall(header + img_bytes)
-        print(f"Image sent to client: {timestamp} ({img_size} bytes, {num_faces} face(s))")
-        return True
-
-    except Exception as e:
-        print(f"Error sending image to client: {e}")
+    else:
+        print(f"Photo file not found: {full_path}")
         return False
+
+
+def check_detection():
+    """Check if something is detected based on current mode"""
+    if current_detect_mode == DETECT_FACE:
+        return Vilib.detect_obj_parameter['human_n'] > 0
+    elif current_detect_mode == DETECT_COLOR:
+        return Vilib.detect_obj_parameter['color_n'] > 0
+    elif current_detect_mode == DETECT_QR:
+        qr_data = Vilib.detect_obj_parameter['qr_data']
+        return qr_data != "None" and qr_data != ""
+    return False
+
+
+def get_detection_info():
+    """Get info about what was detected"""
+    if current_detect_mode == DETECT_FACE:
+        n = Vilib.detect_obj_parameter['human_n']
+        x = Vilib.detect_obj_parameter['human_x']
+        y = Vilib.detect_obj_parameter['human_y']
+        return f"{n} face(s) at ({x}, {y})"
+    elif current_detect_mode == DETECT_COLOR:
+        n = Vilib.detect_obj_parameter['color_n']
+        x = Vilib.detect_obj_parameter['color_x']
+        y = Vilib.detect_obj_parameter['color_y']
+        return f"{current_color} color at ({x}, {y})"
+    elif current_detect_mode == DETECT_QR:
+        qr_data = Vilib.detect_obj_parameter['qr_data']
+        return f"QR code: {qr_data}"
+    return "Unknown"
 
 
 def scanning_mode():
-    """Rotate slowly and move camera up/down to scan for faces"""
-    global face_detection_enabled, scanning_paused, current_tilt, tilt_direction, px
+    """Rotate slowly and move camera up/down to scan"""
+    global detection_enabled, scanning_paused, current_tilt, tilt_direction, px
 
     while True:
-        # Thread-safe check of scanning_paused
         with scan_lock:
             is_paused = scanning_paused
-            detection_enabled = face_detection_enabled
+            enabled = detection_enabled
         
-        if detection_enabled and not is_paused and px is not None:
-            # Rotate slowly in a circle (turn left)
-            px.set_dir_servo_angle(-30)  # Turn wheels left
-            px.forward(SCAN_SPEED)       # Move slowly
+        if enabled and not is_paused and px is not None:
+            px.set_dir_servo_angle(-30)
+            px.forward(SCAN_SPEED)
             
-            # Move camera tilt up and down
             current_tilt += TILT_STEP * tilt_direction
             
-            # Reverse direction at limits
             if current_tilt >= TILT_MAX:
                 current_tilt = TILT_MAX
                 tilt_direction = -1
@@ -137,71 +163,47 @@ def scanning_mode():
                 current_tilt = TILT_MIN
                 tilt_direction = 1
             
-            # Apply camera tilt
             px.set_cam_tilt_angle(current_tilt)
-            
-            time.sleep(0.3)  # Smooth movement
+            time.sleep(0.3)
             
         elif is_paused and px is not None:
-            # Stop the car when face detected
             px.stop()
             time.sleep(0.1)
         else:
             time.sleep(0.1)
 
 
-def detect_and_capture_faces():
-    """Continuous face detection and capture in a separate thread"""
-    global face_detection_enabled, last_face_detected_time, camera, scanning_paused
+def detect_and_capture():
+    """Continuous detection and capture in a separate thread"""
+    global detection_enabled, last_detection_time, scanning_paused
     
     frame_count = 0
-    fail_count = 0
     while True:
-        if face_detection_enabled and camera is not None:
-            ret, frame = camera.read()
-            if ret:
-                fail_count = 0
-                frame_count += 1
-                if frame_count % 50 == 0:  # Print every 50 frames (~5 seconds)
-                    print(f"[DEBUG] Scanning... (frame {frame_count})")
-                
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-                
-                if len(faces) > 0:
-                    print(f"[DEBUG] Found {len(faces)} face(s)!")
-                    current_time = time.time()
-                    if current_time - last_face_detected_time >= face_detection_cooldown:
-                        # STOP scanning - face detected! (thread-safe)
-                        with scan_lock:
-                            scanning_paused = True
-                        print("Face detected! Stopping to capture...")
-                        time.sleep(0.5)  # Let car fully stop
-                        
-                        # Capture fresh frame after stopping
-                        ret, frame = camera.read()
-                        if ret:
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            
-                            # Draw rectangles around faces
-                            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-                            for (x, y, w, h) in faces:
-                                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-
-                            # Send image to client
-                            send_image_to_client(frame, timestamp, len(faces))
-                            last_face_detected_time = current_time
-                        
-                        # Wait a moment, then resume scanning (thread-safe)
-                        print("Picture taken! Resuming scan in 2 seconds...")
-                        time.sleep(2)
-                        with scan_lock:
-                            scanning_paused = False
-            else:
-                fail_count += 1
-                if fail_count % 10 == 1:
-                    print(f"[DEBUG] Camera read failed! (count: {fail_count})")
+        if detection_enabled:
+            frame_count += 1
+            if frame_count % 50 == 0:
+                print(f"[DEBUG] Scanning... (check {frame_count}, mode: {current_detect_mode})")
+            
+            if check_detection():
+                current_time = time.time()
+                if current_time - last_detection_time >= detection_cooldown:
+                    info = get_detection_info()
+                    print(f"[DEBUG] Detected: {info}")
+                    
+                    # Stop scanning
+                    with scan_lock:
+                        scanning_paused = True
+                    print("Detection! Stopping to capture...")
+                    time.sleep(0.5)
+                    
+                    # Take and send photo
+                    take_and_send_photo(info)
+                    
+                    # Resume scanning
+                    print("Photo taken! Resuming scan in 2 seconds...")
+                    time.sleep(2)
+                    with scan_lock:
+                        scanning_paused = False
 
         time.sleep(0.1)
 
@@ -222,11 +224,20 @@ px.set_cam_tilt_angle(0)
 px.set_cam_pan_angle(0)
 
 # Start threads
-face_thread = threading.Thread(target=detect_and_capture_faces, daemon=True)
-face_thread.start()
+detect_thread = threading.Thread(target=detect_and_capture, daemon=True)
+detect_thread.start()
 
 scan_thread = threading.Thread(target=scanning_mode, daemon=True)
 scan_thread.start()
+
+print("""
+Controls:
+  w/a/s/d - Manual movement
+  f - Toggle face detection scanning
+  c - Toggle color detection (cycles through colors)
+  r - Toggle QR code detection
+  q - Quit
+""")
 
 while True:
     print('Waiting for command...')
@@ -235,40 +246,85 @@ while True:
         break
 
     if data == 'w':
-        face_detection_enabled = False  # Disable scanning when manual control
+        detection_enabled = False
         px.set_dir_servo_angle(0)
         px.forward(80)
     elif data == 's':
-        face_detection_enabled = False
+        detection_enabled = False
         px.set_dir_servo_angle(0)
         px.backward(80)
     elif data == 'a':
-        face_detection_enabled = False
+        detection_enabled = False
         px.set_dir_servo_angle(-35)
         px.forward(80)
     elif data == 'd':
-        face_detection_enabled = False
+        detection_enabled = False
         px.set_dir_servo_angle(35)
         px.forward(80)
     elif data == 'f':
-        # Toggle face detection & scanning mode
-        face_detection_enabled = not face_detection_enabled
-        if face_detection_enabled:
+        # Toggle face detection scanning
+        detection_enabled = not detection_enabled
+        if detection_enabled:
             initialize_camera()
+            set_detection_mode(DETECT_FACE)
             with scan_lock:
                 scanning_paused = False
-            px.set_cam_tilt_angle(0)  # Reset camera
-            response = "Scanning mode ENABLED - PiCar will rotate and scan for faces"
+            px.set_cam_tilt_angle(0)
+            response = "Face detection scanning ENABLED"
         else:
             px.stop()
-            response = "Scanning mode DISABLED"
+            Vilib.face_detect_switch(False)
+            response = "Face detection scanning DISABLED"
         print(response)
+        connectionSocket.send(response.encode())
+        continue
+    elif data == 'c':
+        # Toggle/cycle color detection
+        detection_enabled = not detection_enabled
+        if detection_enabled:
+            initialize_camera()
+            # Cycle to next color
+            current_idx = color_list.index(current_color) if current_color in color_list else -1
+            next_color = color_list[(current_idx + 1) % len(color_list)]
+            set_detection_mode(DETECT_COLOR, next_color)
+            with scan_lock:
+                scanning_paused = False
+            px.set_cam_tilt_angle(0)
+            response = f"Color detection ({next_color}) scanning ENABLED"
+        else:
+            px.stop()
+            Vilib.color_detect('close')
+            response = "Color detection scanning DISABLED"
+        print(response)
+        connectionSocket.send(response.encode())
+        continue
+    elif data == 'r':
+        # Toggle QR code detection
+        detection_enabled = not detection_enabled
+        if detection_enabled:
+            initialize_camera()
+            set_detection_mode(DETECT_QR)
+            with scan_lock:
+                scanning_paused = False
+            px.set_cam_tilt_angle(0)
+            response = "QR code detection scanning ENABLED"
+        else:
+            px.stop()
+            Vilib.qrcode_detect_switch(False)
+            response = "QR code detection scanning DISABLED"
+        print(response)
+        connectionSocket.send(response.encode())
+        continue
+    elif data == 'p':
+        # Manual photo
+        initialize_camera()
+        take_and_send_photo("manual")
+        response = "Photo taken!"
         connectionSocket.send(response.encode())
         continue
     elif data == 'q':
         px.stop()
-        if camera is not None:
-            camera.release()
+        Vilib.camera_close()
         connectionSocket.close()
         serverSocket.close()
         sys.exit(0)
