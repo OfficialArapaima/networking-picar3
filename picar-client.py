@@ -1,183 +1,160 @@
-from socket import *
+#!/usr/bin/env python3
+"""
+PiCar-X Client - Runs on Mac/PC
+Sends keyboard commands to control the PiCar-X robot.
+View camera at http://<pi-ip>:9000/mjpg in your browser.
+"""
+
+from socket import socket, AF_INET, SOCK_STREAM, timeout
 from time import sleep
 import readchar
 import threading
-import os
-import struct
+import sys
 
-manual = '''
-Press keys on keyboard to control PiCar-X!
-    w: Forward
-    a: Turn left
-    s: Backward
-    d: Turn right
-    
-    Detection modes (car will scan and auto-capture):
-    f: Toggle FACE detection scanning
-    c: Toggle COLOR detection scanning (cycles: red->orange->yellow->green->blue->purple)
-    r: Toggle QR CODE detection scanning
-    p: Take a manual photo
-    
-    q: Quit (stops car)
-    ctrl+c: Quit (stops car)
+MANUAL = '''
+╔══════════════════════════════════════════════════════════════╗
+║              PiCar-X Keyboard Control                        ║
+╠══════════════════════════════════════════════════════════════╣
+║  MOVEMENT              CAMERA HEAD                           ║
+║    w : Forward           i : Tilt up                         ║
+║    s : Backward          k : Tilt down                       ║
+║    a : Turn left         j : Pan left                        ║
+║    d : Turn right        l : Pan right                       ║
+║    x : Stop                                                  ║
+║                                                              ║
+║  SPEED                 DETECTION MODES                       ║
+║    + : Speed up          f : Toggle face detection           ║
+║    - : Speed down        c : Cycle color detection           ║
+║                          r : Toggle QR detection             ║
+║                        0-6 : Color select (0=off, 1-6=color) ║
+║                                                              ║
+║  UTILITY                                                     ║
+║    p : Take photo (saved on Pi)                              ║
+║    n : Show detection info                                   ║
+║    h : Help                                                  ║
+║    q : Quit                                                  ║
+║                                                              ║
+║  Camera view: http://<pi-ip>:9000/mjpg                       ║
+╚══════════════════════════════════════════════════════════════╝
 '''
 
-# Create directory for received images
-if not os.path.exists('received_faces'):
-    os.makedirs('received_faces')
-    print("Created 'received_faces' folder for captured images")
+running = True
 
-running = True  # Global flag to control threads
 
-def show_info():
-    print(manual)
-
-def receive_data(clientSocket):
-    """Background thread to receive all data (images and text responses) from server"""
+def receive_responses(client_socket):
+    """Background thread to receive and display server responses"""
     global running
-    buffer = b""
-    
-    print("[DEBUG] Receive thread started")
     
     while running:
         try:
-            clientSocket.settimeout(0.5)  # Short timeout to check running flag
+            client_socket.settimeout(0.5)
             try:
-                data = clientSocket.recv(4096)
+                data = client_socket.recv(1024)
             except timeout:
                 continue
             
             if not data:
-                print("\nConnection closed by server")
+                print("\n[Connection closed by server]")
+                running = False
                 break
             
-            print(f"[DEBUG] Received {len(data)} bytes")
-            buffer += data
-            
-            # Process buffer - look for images or text messages
-            while len(buffer) > 0:
-                img_marker_pos = buffer.find(b"IMG")
+            response = data.decode('utf-8').strip()
+            if response:
+                print(f"\r  → {response}")
+                print("Command: ", end='', flush=True)
                 
-                # Check if this is an image
-                if img_marker_pos == 0 and len(buffer) >= 21:
-                    # Extract header info
-                    header_start = 3
-                    try:
-                        timestamp = buffer[header_start:header_start + 14].decode('utf-8')
-                        img_size = struct.unpack('>I', buffer[header_start + 14:header_start + 18])[0]
-                        
-                        img_data_start = header_start + 18
-                        img_data_end = img_data_start + img_size
-                        
-                        # Check if we have the full image
-                        if len(buffer) >= img_data_end:
-                            # Extract and save image
-                            img_data = buffer[img_data_start:img_data_end]
-                            filename = f"received_faces/face_{timestamp}.jpg"
-                            with open(filename, 'wb') as f:
-                                f.write(img_data)
-                            
-                            print(f"\n✓ Face image received and saved: {filename}")
-                            
-                            # Remove processed data
-                            buffer = buffer[img_data_end:]
-                        else:
-                            # Wait for more data
-                            break
-                    except Exception as e:
-                        # Not a valid image header, treat as text
-                        buffer = buffer[1:]  # Skip one byte and try again
-                        
-                elif img_marker_pos > 0:
-                    # There's text before the image marker - print it
-                    text_data = buffer[:img_marker_pos]
-                    try:
-                        text = text_data.decode('utf-8').strip()
-                        if text:
-                            print(f"From Server: {text}")
-                    except:
-                        pass
-                    buffer = buffer[img_marker_pos:]
-                    
-                elif img_marker_pos == -1:
-                    # No image marker - this is text response
-                    # Check if it looks like a complete message (no partial IMG)
-                    if b"IMG" not in buffer:
-                        try:
-                            text = buffer.decode('utf-8').strip()
-                            if text:
-                                print(f"From Server: {text}")
-                            buffer = b""
-                        except:
-                            # Might be partial binary data, keep it
-                            if len(buffer) > 1000:  # Prevent buffer overflow
-                                buffer = buffer[-100:]
-                            break
-                    else:
-                        break
-                else:
-                    # img_marker_pos == 0 but not enough data for header
-                    break
-                    
         except Exception as e:
             if running:
-                print(f"\nError receiving data: {e}")
+                print(f"\n[Error receiving: {e}]")
             break
 
 
 def main():
     global running
     
-    serverName = input('Input the PiCar\'s server address: ')
-
-    serverPort = 12000
-    clientSocket = socket(AF_INET, SOCK_STREAM)
-    clientSocket.connect((serverName, serverPort))
-    print(f"Connected to PiCar at {serverName}:{serverPort}\n")
+    print("\n" + "="*60)
+    print("       PiCar-X Remote Control Client")
+    print("="*60 + "\n")
     
-    # Start background thread to receive all data (images + responses)
-    recv_thread = threading.Thread(target=receive_data, args=(clientSocket,), daemon=True)
+    # Get server address
+    server_ip = input("Enter PiCar IP address: ").strip()
+    if not server_ip:
+        print("No IP provided. Exiting.")
+        return
+    
+    server_port = 12000
+    
+    # Connect to server
+    print(f"\nConnecting to {server_ip}:{server_port}...")
+    
+    try:
+        client_socket = socket(AF_INET, SOCK_STREAM)
+        client_socket.connect((server_ip, server_port))
+        print("Connected!\n")
+    except Exception as e:
+        print(f"Failed to connect: {e}")
+        return
+    
+    # Start response receiver thread
+    recv_thread = threading.Thread(target=receive_responses, args=(client_socket,), daemon=True)
     recv_thread.start()
-
-    show_info()
+    
+    # Show controls
+    print(MANUAL)
+    
+    print(f"\nCamera stream: http://{server_ip}:9000/mjpg")
+    print("Open this URL in your browser to view the camera.\n")
+    
+    valid_commands = 'wasxdikjl+-=_fcr0123456pnhq'
     
     try:
         while running:
+            print("Command: ", end='', flush=True)
+            
             try:
                 key = readchar.readkey()
-                key = key.lower()
-                
-                if key == "exit":
-                    break
-                    
-                if key in ('wsadfqcrp'):
-                    clientSocket.send(key.encode())
-                    if key == 'q':
-                        print("\nStopping car and quitting...")
-                        sleep(0.5)  # Give server time to process
-                        break
-                    elif key == 'p':
-                        print("Taking manual photo...")
-                        
-                elif key == readchar.key.CTRL_C:
-                    break
-                    
             except KeyboardInterrupt:
                 break
+            
+            # Handle special keys
+            if key == readchar.key.CTRL_C:
+                break
+            
+            key = key.lower()
+            
+            # Check if valid command
+            if key in valid_commands:
+                try:
+                    client_socket.send(key.encode())
+                except Exception as e:
+                    print(f"\n[Send error: {e}]")
+                    break
                 
+                if key == 'q':
+                    print("\nQuitting...")
+                    sleep(0.3)
+                    break
+            else:
+                print(f"\r  [Invalid key: '{key}' - press 'h' for help]")
+            
+            sleep(0.05)
+            
     except Exception as e:
         print(f"\nError: {e}")
     
     finally:
-        # Always try to stop the car before quitting
         running = False
+        
+        # Try to send quit command
         try:
-            clientSocket.send(b'q')  # Send quit command to stop car
-            sleep(0.3)
+            client_socket.send(b'q')
+            sleep(0.2)
         except:
             pass
         
-        print("\nDisconnected. Car should be stopped.")
-        clientSocket.close()
+        client_socket.close()
+        print("\nDisconnected from PiCar-X")
 
-main()
+
+if __name__ == "__main__":
+    main()

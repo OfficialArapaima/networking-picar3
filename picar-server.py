@@ -1,337 +1,421 @@
+#!/usr/bin/env python3
+"""
+PiCar-X Server - Runs on Raspberry Pi
+Handles motor control, camera streaming, and detection modes.
+Camera view available at http://<pi-ip>:9000/mjpg
+"""
+
 import sys
 import os
 from socket import *
 from picarx import Picarx
 from vilib import Vilib
 from datetime import datetime
+from time import sleep, time, strftime, localtime
 import threading
-import time
-import struct
 
-serverPort = 12000
+# Server settings
+SERVER_PORT = 12000
 
-# Detection settings
-detection_enabled = False
-scanning_paused = False
-scan_lock = threading.Lock()
-last_detection_time = 0
-detection_cooldown = 3  # seconds between captures
-
-# Detection modes
-DETECT_FACE = 'face'
-DETECT_COLOR = 'color'
-DETECT_QR = 'qr'
-current_detect_mode = DETECT_FACE
-current_color = 'red'
-
+# Detection state
+face_detect_on = False
+color_detect_on = False
+qr_detect_on = False
+current_color_idx = 0
 color_list = ['red', 'orange', 'yellow', 'green', 'blue', 'purple']
 
-connectionSocket = None
-
-# Scanning settings
-SCAN_SPEED = 20
-TILT_MIN = -20
-TILT_MAX = 20
-TILT_STEP = 5
-tilt_direction = 1
-current_tilt = 0
-
-px = None
+# Camera state
 camera_started = False
+
+# Car state
+current_speed = 50
+pan_angle = 0
+tilt_angle = 0
+
+# Connection
+connection_socket = None
+px = None
 
 
 def initialize_camera():
-    """Initialize the camera using Vilib"""
+    """Start camera with web streaming"""
     global camera_started
     if not camera_started:
         Vilib.camera_start(vflip=False, hflip=False)
-        time.sleep(1)
-        print("Camera initialized with Vilib")
+        Vilib.display(local=True, web=True)
+        sleep(0.5)
         camera_started = True
+        print("Camera started - Web view at http://<this-pi-ip>:9000/mjpg")
 
 
-def set_detection_mode(mode, color=None):
-    """Set the detection mode (face, color, or qr)"""
-    global current_detect_mode, current_color
-    
-    # Turn off all detection first
-    Vilib.face_detect_switch(False)
-    Vilib.color_detect('close')
-    Vilib.qrcode_detect_switch(False)
-    
-    current_detect_mode = mode
-    
-    if mode == DETECT_FACE:
-        Vilib.face_detect_switch(True)
-        print("Face detection enabled")
-    elif mode == DETECT_COLOR:
-        if color:
-            current_color = color
-        Vilib.color_detect(current_color)
-        print(f"Color detection enabled: {current_color}")
-    elif mode == DETECT_QR:
-        Vilib.qrcode_detect_switch(True)
-        print("QR code detection enabled")
+def send_response(msg):
+    """Send text response to client"""
+    global connection_socket
+    try:
+        if connection_socket:
+            connection_socket.send(msg.encode())
+    except Exception as e:
+        print(f"Error sending response: {e}")
 
 
-def take_and_send_photo(reason="detection"):
-    """Take a photo and send it to the client"""
-    global connectionSocket, last_detection_time
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+def take_photo():
+    """Take and save photo locally on Pi"""
+    initialize_camera()
+    _time = strftime('%Y-%m-%d-%H-%M-%S', localtime(time()))
+    name = f'photo_{_time}'
     username = os.getlogin()
-    photo_path = f"/home/{username}/Pictures/"
-    photo_name = f"capture_{timestamp}"
+    path = f"/home/{username}/Pictures/"
     
-    # Take photo using Vilib
-    Vilib.take_photo(photo_name, photo_path)
-    full_path = f"{photo_path}{photo_name}.jpg"
+    # Create directory if needed
+    os.makedirs(path, exist_ok=True)
     
-    print(f"Photo taken: {full_path} ({reason})")
+    Vilib.take_photo(name, path)
+    full_path = f"{path}{name}.jpg"
+    print(f"Photo saved: {full_path}")
+    return full_path
+
+
+def toggle_face_detect():
+    """Toggle face detection on/off"""
+    global face_detect_on, color_detect_on, qr_detect_on
     
-    # Read and send the photo to client
-    time.sleep(0.3)  # Wait for file to be written
+    initialize_camera()
     
-    if os.path.exists(full_path):
-        try:
-            with open(full_path, 'rb') as f:
-                img_bytes = f.read()
-            
-            img_size = len(img_bytes)
-            header = b"IMG" + timestamp.encode('utf-8') + struct.pack('>I', img_size)
-            connectionSocket.sendall(header + img_bytes)
-            print(f"Image sent to client: {timestamp} ({img_size} bytes)")
-            last_detection_time = time.time()
-            return True
-        except Exception as e:
-            print(f"Error sending image: {e}")
-            return False
+    # Turn off other modes
+    if color_detect_on:
+        Vilib.color_detect('close')
+        color_detect_on = False
+    if qr_detect_on:
+        Vilib.qrcode_detect_switch(False)
+        qr_detect_on = False
+    
+    face_detect_on = not face_detect_on
+    Vilib.face_detect_switch(face_detect_on)
+    
+    status = "ON" if face_detect_on else "OFF"
+    msg = f"Face detection: {status}"
+    print(msg)
+    return msg
+
+
+def toggle_color_detect():
+    """Toggle color detection and cycle through colors"""
+    global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
+    
+    initialize_camera()
+    
+    # Turn off other modes
+    if face_detect_on:
+        Vilib.face_detect_switch(False)
+        face_detect_on = False
+    if qr_detect_on:
+        Vilib.qrcode_detect_switch(False)
+        qr_detect_on = False
+    
+    if color_detect_on:
+        # Cycle to next color
+        current_color_idx = (current_color_idx + 1) % len(color_list)
+        if current_color_idx == 0:
+            # Cycled through all - turn off
+            Vilib.color_detect('close')
+            color_detect_on = False
+            msg = "Color detection: OFF"
+        else:
+            color = color_list[current_color_idx]
+            Vilib.color_detect(color)
+            msg = f"Color detection: {color}"
     else:
-        print(f"Photo file not found: {full_path}")
-        return False
+        # Turn on with first color
+        current_color_idx = 0
+        color = color_list[current_color_idx]
+        Vilib.color_detect(color)
+        color_detect_on = True
+        msg = f"Color detection: {color}"
+    
+    print(msg)
+    return msg
 
 
-def check_detection():
-    """Check if something is detected based on current mode"""
-    if current_detect_mode == DETECT_FACE:
-        return Vilib.detect_obj_parameter['human_n'] > 0
-    elif current_detect_mode == DETECT_COLOR:
-        return Vilib.detect_obj_parameter['color_n'] > 0
-    elif current_detect_mode == DETECT_QR:
-        qr_data = Vilib.detect_obj_parameter['qr_data']
-        return qr_data != "None" and qr_data != ""
-    return False
+def set_color_detect(color_num):
+    """Set specific color detection (1-6)"""
+    global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
+    
+    initialize_camera()
+    
+    # Turn off other modes
+    if face_detect_on:
+        Vilib.face_detect_switch(False)
+        face_detect_on = False
+    if qr_detect_on:
+        Vilib.qrcode_detect_switch(False)
+        qr_detect_on = False
+    
+    if color_num == 0:
+        Vilib.color_detect('close')
+        color_detect_on = False
+        msg = "Color detection: OFF"
+    else:
+        current_color_idx = color_num - 1
+        color = color_list[current_color_idx]
+        Vilib.color_detect(color)
+        color_detect_on = True
+        msg = f"Color detection: {color}"
+    
+    print(msg)
+    return msg
+
+
+def toggle_qr_detect():
+    """Toggle QR code detection on/off"""
+    global face_detect_on, color_detect_on, qr_detect_on
+    
+    initialize_camera()
+    
+    # Turn off other modes
+    if face_detect_on:
+        Vilib.face_detect_switch(False)
+        face_detect_on = False
+    if color_detect_on:
+        Vilib.color_detect('close')
+        color_detect_on = False
+    
+    qr_detect_on = not qr_detect_on
+    Vilib.qrcode_detect_switch(qr_detect_on)
+    
+    status = "ON" if qr_detect_on else "OFF"
+    msg = f"QR detection: {status}"
+    print(msg)
+    return msg
 
 
 def get_detection_info():
-    """Get info about what was detected"""
-    if current_detect_mode == DETECT_FACE:
-        n = Vilib.detect_obj_parameter['human_n']
-        x = Vilib.detect_obj_parameter['human_x']
-        y = Vilib.detect_obj_parameter['human_y']
-        return f"{n} face(s) at ({x}, {y})"
-    elif current_detect_mode == DETECT_COLOR:
-        n = Vilib.detect_obj_parameter['color_n']
-        x = Vilib.detect_obj_parameter['color_x']
-        y = Vilib.detect_obj_parameter['color_y']
-        return f"{current_color} color at ({x}, {y})"
-    elif current_detect_mode == DETECT_QR:
-        qr_data = Vilib.detect_obj_parameter['qr_data']
-        return f"QR code: {qr_data}"
-    return "Unknown"
-
-
-def scanning_mode():
-    """Rotate slowly and move camera up/down to scan"""
-    global detection_enabled, scanning_paused, current_tilt, tilt_direction, px
-
-    while True:
-        with scan_lock:
-            is_paused = scanning_paused
-            enabled = detection_enabled
-        
-        if enabled and not is_paused and px is not None:
-            px.set_dir_servo_angle(-30)
-            px.forward(SCAN_SPEED)
-            
-            current_tilt += TILT_STEP * tilt_direction
-            
-            if current_tilt >= TILT_MAX:
-                current_tilt = TILT_MAX
-                tilt_direction = -1
-            elif current_tilt <= TILT_MIN:
-                current_tilt = TILT_MIN
-                tilt_direction = 1
-            
-            px.set_cam_tilt_angle(current_tilt)
-            time.sleep(0.3)
-            
-        elif is_paused and px is not None:
-            px.stop()
-            time.sleep(0.1)
-        else:
-            time.sleep(0.1)
-
-
-def detect_and_capture():
-    """Continuous detection and capture in a separate thread"""
-    global detection_enabled, last_detection_time, scanning_paused
+    """Get current detection information"""
+    info_parts = []
     
-    frame_count = 0
-    while True:
-        if detection_enabled:
-            frame_count += 1
-            if frame_count % 50 == 0:
-                print(f"[DEBUG] Scanning... (check {frame_count}, mode: {current_detect_mode})")
-            
-            if check_detection():
-                current_time = time.time()
-                if current_time - last_detection_time >= detection_cooldown:
-                    info = get_detection_info()
-                    print(f"[DEBUG] Detected: {info}")
-                    
-                    # Stop scanning
-                    with scan_lock:
-                        scanning_paused = True
-                    print("Detection! Stopping to capture...")
-                    time.sleep(0.5)
-                    
-                    # Take and send photo
-                    take_and_send_photo(info)
-                    
-                    # Resume scanning
-                    print("Photo taken! Resuming scan in 2 seconds...")
-                    time.sleep(2)
-                    with scan_lock:
-                        scanning_paused = False
+    if face_detect_on:
+        n = Vilib.detect_obj_parameter['human_n']
+        if n > 0:
+            x = Vilib.detect_obj_parameter['human_x']
+            y = Vilib.detect_obj_parameter['human_y']
+            info_parts.append(f"Faces: {n} at ({x},{y})")
+        else:
+            info_parts.append("Faces: none")
+    
+    if color_detect_on:
+        n = Vilib.detect_obj_parameter['color_n']
+        if n > 0:
+            x = Vilib.detect_obj_parameter['color_x']
+            y = Vilib.detect_obj_parameter['color_y']
+            info_parts.append(f"Color: found at ({x},{y})")
+        else:
+            info_parts.append("Color: none")
+    
+    if qr_detect_on:
+        qr_data = Vilib.detect_obj_parameter['qr_data']
+        if qr_data and qr_data != "None":
+            info_parts.append(f"QR: {qr_data}")
+        else:
+            info_parts.append("QR: none")
+    
+    if not info_parts:
+        return "No detection mode active"
+    
+    return " | ".join(info_parts)
 
-        time.sleep(0.1)
+
+def clamp(value, min_val, max_val):
+    """Clamp value between min and max"""
+    return max(min_val, min(max_val, value))
 
 
-# Bind the server to the socket
-serverSocket = socket(AF_INET, SOCK_STREAM)
-serverSocket.bind(("", serverPort))
-print("Server started on port: %s" % serverPort)
-serverSocket.listen(1)
-print('The server is now listening...\n')
-connectionSocket, addr = serverSocket.accept()
-print('Connected by %s:%d' % (addr[0], addr[1]))
-
-px = Picarx()
-
-# Reset camera position
-px.set_cam_tilt_angle(0)
-px.set_cam_pan_angle(0)
-
-# Start threads
-detect_thread = threading.Thread(target=detect_and_capture, daemon=True)
-detect_thread.start()
-
-scan_thread = threading.Thread(target=scanning_mode, daemon=True)
-scan_thread.start()
-
-print("""
-Controls:
-  w/a/s/d - Manual movement
-  f - Toggle face detection scanning
-  c - Toggle color detection (cycles through colors)
-  r - Toggle QR code detection
-  q - Quit
-""")
-
-while True:
-    print('Waiting for command...')
-    data = connectionSocket.recv(1024).decode()
-    if not data:
-        break
-
-    if data == 'w':
-        detection_enabled = False
+def handle_command(cmd):
+    """Process a command from the client"""
+    global current_speed, pan_angle, tilt_angle, px
+    
+    response = ""
+    
+    # Movement commands
+    if cmd == 'w':
         px.set_dir_servo_angle(0)
-        px.forward(80)
-    elif data == 's':
-        detection_enabled = False
+        px.forward(current_speed)
+        response = f"Forward (speed: {current_speed})"
+        
+    elif cmd == 's':
         px.set_dir_servo_angle(0)
-        px.backward(80)
-    elif data == 'a':
-        detection_enabled = False
+        px.backward(current_speed)
+        response = f"Backward (speed: {current_speed})"
+        
+    elif cmd == 'a':
         px.set_dir_servo_angle(-35)
-        px.forward(80)
-    elif data == 'd':
-        detection_enabled = False
+        px.forward(current_speed)
+        response = f"Turn left (speed: {current_speed})"
+        
+    elif cmd == 'd':
         px.set_dir_servo_angle(35)
-        px.forward(80)
-    elif data == 'f':
-        # Toggle face detection scanning
-        detection_enabled = not detection_enabled
-        if detection_enabled:
-            initialize_camera()
-            set_detection_mode(DETECT_FACE)
-            with scan_lock:
-                scanning_paused = False
-            px.set_cam_tilt_angle(0)
-            response = "Face detection scanning ENABLED"
-        else:
-            px.stop()
-            Vilib.face_detect_switch(False)
-            response = "Face detection scanning DISABLED"
-        print(response)
-        connectionSocket.send(response.encode())
-        continue
-    elif data == 'c':
-        # Toggle/cycle color detection
-        detection_enabled = not detection_enabled
-        if detection_enabled:
-            initialize_camera()
-            # Cycle to next color
-            current_idx = color_list.index(current_color) if current_color in color_list else -1
-            next_color = color_list[(current_idx + 1) % len(color_list)]
-            set_detection_mode(DETECT_COLOR, next_color)
-            with scan_lock:
-                scanning_paused = False
-            px.set_cam_tilt_angle(0)
-            response = f"Color detection ({next_color}) scanning ENABLED"
-        else:
-            px.stop()
-            Vilib.color_detect('close')
-            response = "Color detection scanning DISABLED"
-        print(response)
-        connectionSocket.send(response.encode())
-        continue
-    elif data == 'r':
-        # Toggle QR code detection
-        detection_enabled = not detection_enabled
-        if detection_enabled:
-            initialize_camera()
-            set_detection_mode(DETECT_QR)
-            with scan_lock:
-                scanning_paused = False
-            px.set_cam_tilt_angle(0)
-            response = "QR code detection scanning ENABLED"
-        else:
-            px.stop()
-            Vilib.qrcode_detect_switch(False)
-            response = "QR code detection scanning DISABLED"
-        print(response)
-        connectionSocket.send(response.encode())
-        continue
-    elif data == 'p':
-        # Manual photo
-        initialize_camera()
-        take_and_send_photo("manual")
-        response = "Photo taken!"
-        connectionSocket.send(response.encode())
-        continue
-    elif data == 'q':
+        px.forward(current_speed)
+        response = f"Turn right (speed: {current_speed})"
+    
+    elif cmd == 'x':
         px.stop()
-        Vilib.camera_close()
-        connectionSocket.close()
-        serverSocket.close()
-        sys.exit(0)
+        response = "Stopped"
+    
+    # Speed control
+    elif cmd == '+' or cmd == '=':
+        current_speed = clamp(current_speed + 10, 0, 100)
+        response = f"Speed: {current_speed}"
+        
+    elif cmd == '-' or cmd == '_':
+        current_speed = clamp(current_speed - 10, 0, 100)
+        response = f"Speed: {current_speed}"
+    
+    # Camera pan/tilt
+    elif cmd == 'i':
+        tilt_angle = clamp(tilt_angle + 5, -35, 35)
+        px.set_cam_tilt_angle(tilt_angle)
+        response = f"Tilt: {tilt_angle}"
+        
+    elif cmd == 'k':
+        tilt_angle = clamp(tilt_angle - 5, -35, 35)
+        px.set_cam_tilt_angle(tilt_angle)
+        response = f"Tilt: {tilt_angle}"
+        
+    elif cmd == 'j':
+        pan_angle = clamp(pan_angle - 5, -35, 35)
+        px.set_cam_pan_angle(pan_angle)
+        response = f"Pan: {pan_angle}"
+        
+    elif cmd == 'l':
+        pan_angle = clamp(pan_angle + 5, -35, 35)
+        px.set_cam_pan_angle(pan_angle)
+        response = f"Pan: {pan_angle}"
+    
+    # Detection modes
+    elif cmd == 'f':
+        response = toggle_face_detect()
+        
+    elif cmd == 'c':
+        response = toggle_color_detect()
+        
+    elif cmd in '0123456':
+        response = set_color_detect(int(cmd))
+        
+    elif cmd == 'r':
+        response = toggle_qr_detect()
+    
+    # Info/utility
+    elif cmd == 'n':
+        response = get_detection_info()
+        
+    elif cmd == 'p':
+        path = take_photo()
+        response = f"Photo saved: {path}"
+    
+    elif cmd == 'h':
+        response = "Commands: wasd=move, x=stop, +-=speed, ijkl=cam, f=face, c=color, r=qr, p=photo, n=info, q=quit"
+    
+    elif cmd == 'q':
+        response = "Shutting down..."
+        return response, True  # Signal to quit
+    
     else:
-        print(data)
+        response = f"Unknown command: {cmd}"
+    
+    print(f"[{cmd}] {response}")
+    return response, False
 
-    connectionSocket.send(data.encode())
 
-connectionSocket.close()
-serverSocket.close()
+def cleanup():
+    """Clean up resources"""
+    global px, camera_started
+    
+    print("\nCleaning up...")
+    
+    if px:
+        px.set_cam_tilt_angle(0)
+        px.set_cam_pan_angle(0)
+        px.set_dir_servo_angle(0)
+        px.stop()
+    
+    if camera_started:
+        Vilib.camera_close()
+    
+    sleep(0.2)
+    print("Cleanup complete")
+
+
+def main():
+    global connection_socket, px
+    
+    # Create server socket
+    server_socket = socket(AF_INET, SOCK_STREAM)
+    server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+    server_socket.bind(("", SERVER_PORT))
+    server_socket.listen(1)
+    
+    print("=" * 50)
+    print("PiCar-X Server Started")
+    print(f"Listening on port {SERVER_PORT}")
+    print("=" * 50)
+    
+    try:
+        while True:
+            print("\nWaiting for client connection...")
+            connection_socket, addr = server_socket.accept()
+            print(f"Client connected: {addr[0]}:{addr[1]}")
+            
+            # Initialize PiCar
+            px = Picarx()
+            px.set_cam_tilt_angle(0)
+            px.set_cam_pan_angle(0)
+            
+            # Start camera with web view
+            initialize_camera()
+            
+            # Send welcome message
+            welcome = "Connected to PiCar-X! Press 'h' for help. Camera: http://<pi-ip>:9000/mjpg"
+            send_response(welcome)
+            
+            try:
+                while True:
+                    data = connection_socket.recv(1024)
+                    if not data:
+                        print("Client disconnected")
+                        break
+                    
+                    cmd = data.decode().lower()
+                    
+                    for c in cmd:  # Handle multiple chars if sent together
+                        response, should_quit = handle_command(c)
+                        send_response(response)
+                        
+                        if should_quit:
+                            cleanup()
+                            connection_socket.close()
+                            server_socket.close()
+                            print("Server shutdown complete")
+                            sys.exit(0)
+                    
+                    # Brief stop after movement commands
+                    if cmd in 'wasd':
+                        sleep(0.3)
+                        px.stop()
+                        
+            except Exception as e:
+                print(f"Error handling client: {e}")
+            finally:
+                px.stop()
+                connection_socket.close()
+                
+    except KeyboardInterrupt:
+        print("\nServer interrupted")
+    finally:
+        cleanup()
+        server_socket.close()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        cleanup()
