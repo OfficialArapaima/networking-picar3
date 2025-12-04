@@ -12,7 +12,8 @@ Press keys on keyboard to control PiCar-X!
     s: Backward
     d: Turn right
     f: Toggle face detection ON/OFF
-    ctrl+c: Quit
+    q: Quit (stops car)
+    ctrl+c: Quit (stops car)
 '''
 
 # Create directory for received images
@@ -20,70 +21,104 @@ if not os.path.exists('received_faces'):
     os.makedirs('received_faces')
     print("Created 'received_faces' folder for captured images")
 
+running = True  # Global flag to control threads
+
 def show_info():
     print(manual)
 
-def receive_images(clientSocket):
-    """Background thread to continuously receive images from server"""
+def receive_data(clientSocket):
+    """Background thread to receive all data (images and text responses) from server"""
+    global running
     buffer = b""
     
-    while True:
+    while running:
         try:
-            # Receive data in chunks
-            data = clientSocket.recv(4096)
+            clientSocket.settimeout(0.5)  # Short timeout to check running flag
+            try:
+                data = clientSocket.recv(4096)
+            except timeout:
+                continue
+            
             if not data:
                 print("\nConnection closed by server")
                 break
             
             buffer += data
             
-            # Look for image header (IMG marker + 14 byte timestamp + 4 byte size)
-            while len(buffer) >= 21:  # Minimum header size: 3 (IMG) + 14 (timestamp) + 4 (size)
+            # Process buffer - look for images or text messages
+            while len(buffer) > 0:
                 img_marker_pos = buffer.find(b"IMG")
                 
-                if img_marker_pos == -1:
-                    # No image marker found, might be a control message
-                    # Keep last 20 bytes in case marker is split
-                    if len(buffer) > 20:
-                        buffer = buffer[-20:]
-                    break
-                
-                # Check if we have full header
-                if img_marker_pos + 21 > len(buffer):
-                    break
-                
-                # Extract header info
-                header_start = img_marker_pos + 3
-                timestamp = buffer[header_start:header_start + 14].decode('utf-8')
-                img_size = struct.unpack('>I', buffer[header_start + 14:header_start + 18])[0]
-                
-                img_data_start = header_start + 18
-                img_data_end = img_data_start + img_size
-                
-                # Check if we have the full image
-                if len(buffer) >= img_data_end:
-                    # Extract image data
-                    img_data = buffer[img_data_start:img_data_end]
+                # Check if this is an image
+                if img_marker_pos == 0 and len(buffer) >= 21:
+                    # Extract header info
+                    header_start = 3
+                    try:
+                        timestamp = buffer[header_start:header_start + 14].decode('utf-8')
+                        img_size = struct.unpack('>I', buffer[header_start + 14:header_start + 18])[0]
+                        
+                        img_data_start = header_start + 18
+                        img_data_end = img_data_start + img_size
+                        
+                        # Check if we have the full image
+                        if len(buffer) >= img_data_end:
+                            # Extract and save image
+                            img_data = buffer[img_data_start:img_data_end]
+                            filename = f"received_faces/face_{timestamp}.jpg"
+                            with open(filename, 'wb') as f:
+                                f.write(img_data)
+                            
+                            print(f"\n✓ Face image received and saved: {filename}")
+                            
+                            # Remove processed data
+                            buffer = buffer[img_data_end:]
+                        else:
+                            # Wait for more data
+                            break
+                    except Exception as e:
+                        # Not a valid image header, treat as text
+                        buffer = buffer[1:]  # Skip one byte and try again
+                        
+                elif img_marker_pos > 0:
+                    # There's text before the image marker - print it
+                    text_data = buffer[:img_marker_pos]
+                    try:
+                        text = text_data.decode('utf-8').strip()
+                        if text:
+                            print(f"From Server: {text}")
+                    except:
+                        pass
+                    buffer = buffer[img_marker_pos:]
                     
-                    # Save image to file
-                    filename = f"received_faces/face_{timestamp}.jpg"
-                    with open(filename, 'wb') as f:
-                        f.write(img_data)
-                    
-                    print(f"\n✓ Face image received and saved: {filename}")
-                    
-                    # Remove processed data from buffer
-                    buffer = buffer[img_data_end:]
+                elif img_marker_pos == -1:
+                    # No image marker - this is text response
+                    # Check if it looks like a complete message (no partial IMG)
+                    if b"IMG" not in buffer:
+                        try:
+                            text = buffer.decode('utf-8').strip()
+                            if text:
+                                print(f"From Server: {text}")
+                            buffer = b""
+                        except:
+                            # Might be partial binary data, keep it
+                            if len(buffer) > 1000:  # Prevent buffer overflow
+                                buffer = buffer[-100:]
+                            break
+                    else:
+                        break
                 else:
-                    # Wait for more data
+                    # img_marker_pos == 0 but not enough data for header
                     break
                     
         except Exception as e:
-            print(f"\nError receiving image: {e}")
+            if running:
+                print(f"\nError receiving data: {e}")
             break
 
 
 def main():
+    global running
+    
     serverName = input('Input the PiCar\'s server address: ')
 
     serverPort = 12000
@@ -91,43 +126,47 @@ def main():
     clientSocket.connect((serverName, serverPort))
     print(f"Connected to PiCar at {serverName}:{serverPort}\n")
     
-    # Start background thread to receive images
-    img_thread = threading.Thread(target=receive_images, args=(clientSocket,), daemon=True)
-    img_thread.start()
-
-# make the car move when single key is pressed continuously
-
+    # Start background thread to receive all data (images + responses)
+    recv_thread = threading.Thread(target=receive_data, args=(clientSocket,), daemon=True)
+    recv_thread.start()
 
     show_info()
     
-    while True:
-        try:
-            key = readchar.readkey()
-            key = key.lower()
-            if key == "exit":
-                break
-            if key in ('wsadf'):
-                clientSocket.send(key.encode())
-                # Only wait for response on 'f' command (toggle face detection)
-                if 'f' in key:
-                    # Set timeout for receiving response
-                    clientSocket.settimeout(1.0)
-                    try:
-                        response = clientSocket.recv(1024)
-                        print('From Server: ', response.decode())
-                    except timeout:
-                        pass
-                    finally:
-                        clientSocket.settimeout(None)
-            elif key == readchar.key.CTRL_C:
-                    print("\n Quit")
+    try:
+        while running:
+            try:
+                key = readchar.readkey()
+                key = key.lower()
+                
+                if key == "exit":
                     break
-        except KeyboardInterrupt:
-            print("\n Quit")
-            break
-
-
-            
-    clientSocket.close()
+                    
+                if key in ('wsadfq'):
+                    clientSocket.send(key.encode())
+                    if key == 'q':
+                        print("\nStopping car and quitting...")
+                        sleep(0.5)  # Give server time to process
+                        break
+                        
+                elif key == readchar.key.CTRL_C:
+                    break
+                    
+            except KeyboardInterrupt:
+                break
+                
+    except Exception as e:
+        print(f"\nError: {e}")
+    
+    finally:
+        # Always try to stop the car before quitting
+        running = False
+        try:
+            clientSocket.send(b'q')  # Send quit command to stop car
+            sleep(0.3)
+        except:
+            pass
+        
+        print("\nDisconnected. Car should be stopped.")
+        clientSocket.close()
 
 main()

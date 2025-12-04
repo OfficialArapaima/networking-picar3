@@ -13,9 +13,36 @@ serverPort = 12000
 # Face detection settings
 face_detection_enabled = False
 scanning_paused = False  # Pause scanning when face detected
-face_cascade = cv2.CascadeClassifier(
-    '/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml'
-)
+scan_lock = threading.Lock()  # Thread synchronization for scanning_paused
+
+# Load face cascade with cross-platform compatibility
+def load_face_cascade():
+    """Load Haar cascade with fallback paths for cross-platform support"""
+    cascade_paths = []
+    
+    # Try cv2.data.haarcascades first (cross-platform, works with pip-installed OpenCV)
+    if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+        cascade_paths.append(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    
+    # Fallback paths for system-installed OpenCV on Linux
+    cascade_paths.extend([
+        '/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml',
+        '/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml',
+        '/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml',
+    ])
+    
+    for path in cascade_paths:
+        if os.path.exists(path):
+            cascade = cv2.CascadeClassifier(path)
+            if not cascade.empty():
+                print(f"Face cascade loaded from: {path}")
+                return cascade
+    
+    print("ERROR: Could not load face cascade classifier!")
+    print("Please install opencv-python: pip3 install opencv-python")
+    return cv2.CascadeClassifier()  # Return empty classifier
+
+face_cascade = load_face_cascade()
 camera = None
 last_face_detected_time = 0
 face_detection_cooldown = 3  # seconds between captures (give time to resume scanning)
@@ -89,7 +116,12 @@ def scanning_mode():
     global face_detection_enabled, scanning_paused, current_tilt, tilt_direction, px
 
     while True:
-        if face_detection_enabled and not scanning_paused and px is not None:
+        # Thread-safe check of scanning_paused
+        with scan_lock:
+            is_paused = scanning_paused
+            detection_enabled = face_detection_enabled
+        
+        if detection_enabled and not is_paused and px is not None:
             # Rotate slowly in a circle (turn left)
             px.set_dir_servo_angle(-30)  # Turn wheels left
             px.forward(SCAN_SPEED)       # Move slowly
@@ -110,7 +142,7 @@ def scanning_mode():
             
             time.sleep(0.3)  # Smooth movement
             
-        elif scanning_paused and px is not None:
+        elif is_paused and px is not None:
             # Stop the car when face detected
             px.stop()
             time.sleep(0.1)
@@ -132,8 +164,9 @@ def detect_and_capture_faces():
                 if len(faces) > 0:
                     current_time = time.time()
                     if current_time - last_face_detected_time >= face_detection_cooldown:
-                        # STOP scanning - face detected!
-                        scanning_paused = True
+                        # STOP scanning - face detected! (thread-safe)
+                        with scan_lock:
+                            scanning_paused = True
                         print("Face detected! Stopping to capture...")
                         time.sleep(0.5)  # Let car fully stop
                         
@@ -152,10 +185,11 @@ def detect_and_capture_faces():
                             send_image_to_client(frame, timestamp, len(faces))
                             last_face_detected_time = current_time
                         
-                        # Wait a moment, then resume scanning
+                        # Wait a moment, then resume scanning (thread-safe)
                         print("Picture taken! Resuming scan in 2 seconds...")
                         time.sleep(2)
-                        scanning_paused = False
+                        with scan_lock:
+                            scanning_paused = False
 
         time.sleep(0.1)
 
@@ -209,7 +243,8 @@ while True:
         face_detection_enabled = not face_detection_enabled
         if face_detection_enabled:
             initialize_camera()
-            scanning_paused = False
+            with scan_lock:
+                scanning_paused = False
             px.set_cam_tilt_angle(0)  # Reset camera
             response = "Scanning mode ENABLED - PiCar will rotate and scan for faces"
         else:
