@@ -31,6 +31,8 @@ def receive_data(clientSocket):
     global running
     buffer = b""
     
+    print("[DEBUG] Receive thread started")
+    
     while running:
         try:
             clientSocket.settimeout(0.5)  # Short timeout to check running flag
@@ -43,6 +45,7 @@ def receive_data(clientSocket):
                 print("\nConnection closed by server")
                 break
             
+            print(f"[DEBUG] Received {len(data)} bytes")
             buffer += data
             
             # Process buffer - look for images or text messages

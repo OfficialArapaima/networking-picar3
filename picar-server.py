@@ -153,15 +153,23 @@ def scanning_mode():
 def detect_and_capture_faces():
     """Continuous face detection and capture in a separate thread"""
     global face_detection_enabled, last_face_detected_time, camera, scanning_paused
-
+    
+    frame_count = 0
+    fail_count = 0
     while True:
         if face_detection_enabled and camera is not None:
             ret, frame = camera.read()
             if ret:
+                fail_count = 0
+                frame_count += 1
+                if frame_count % 50 == 0:  # Print every 50 frames (~5 seconds)
+                    print(f"[DEBUG] Scanning... (frame {frame_count})")
+                
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-
+                
                 if len(faces) > 0:
+                    print(f"[DEBUG] Found {len(faces)} face(s)!")
                     current_time = time.time()
                     if current_time - last_face_detected_time >= face_detection_cooldown:
                         # STOP scanning - face detected! (thread-safe)
@@ -190,6 +198,10 @@ def detect_and_capture_faces():
                         time.sleep(2)
                         with scan_lock:
                             scanning_paused = False
+            else:
+                fail_count += 1
+                if fail_count % 10 == 1:
+                    print(f"[DEBUG] Camera read failed! (count: {fail_count})")
 
         time.sleep(0.1)
 
