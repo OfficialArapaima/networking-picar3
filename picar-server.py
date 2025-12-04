@@ -41,11 +41,21 @@ def initialize_camera():
     """Start camera with web streaming"""
     global camera_started
     if not camera_started:
-        Vilib.camera_start(vflip=False, hflip=False)
-        Vilib.display(local=True, web=True)
-        sleep(0.5)
-        camera_started = True
-        print("Camera started - Web view at http://<this-pi-ip>:9000/mjpg")
+        try:
+            print("Initializing camera...")
+            Vilib.camera_start(vflip=False, hflip=False)
+            sleep(0.5)
+            # web=True enables Flask web server, local=False for headless operation
+            Vilib.display(local=False, web=True)
+            sleep(1)  # Give camera time to start
+            camera_started = True
+            print("Camera started successfully!")
+            print("\nTry these URLs in your browser:")
+            print("  http://<pi-ip>:9000/mjpg")
+            print("  http://<pi-ip>:9000/")
+        except Exception as e:
+            print(f"Camera error: {e}")
+            camera_started = False
 
 
 def send_response(msg):
@@ -343,8 +353,31 @@ def cleanup():
     print("Cleanup complete")
 
 
+def get_ip_address():
+    """Get the Pi's IP address"""
+    import subprocess
+    try:
+        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True)
+        ip = result.stdout.strip().split()[0]
+        return ip
+    except:
+        return "<pi-ip>"
+
+
 def main():
     global connection_socket, px
+    
+    # Initialize PiCar first
+    px = Picarx()
+    px.set_cam_tilt_angle(0)
+    px.set_cam_pan_angle(0)
+    
+    # Start camera immediately so user can view it
+    print("Starting camera...")
+    initialize_camera()
+    
+    # Get IP address for display
+    ip_addr = get_ip_address()
     
     # Create server socket
     server_socket = socket(AF_INET, SOCK_STREAM)
@@ -354,7 +387,8 @@ def main():
     
     print("=" * 50)
     print("PiCar-X Server Started")
-    print(f"Listening on port {SERVER_PORT}")
+    print(f"Control port: {SERVER_PORT}")
+    print(f"Camera stream: http://{ip_addr}:9000/mjpg")
     print("=" * 50)
     
     try:
@@ -363,16 +397,8 @@ def main():
             connection_socket, addr = server_socket.accept()
             print(f"Client connected: {addr[0]}:{addr[1]}")
             
-            # Initialize PiCar
-            px = Picarx()
-            px.set_cam_tilt_angle(0)
-            px.set_cam_pan_angle(0)
-            
-            # Start camera with web view
-            initialize_camera()
-            
             # Send welcome message
-            welcome = "Connected to PiCar-X! Press 'h' for help. Camera: http://<pi-ip>:9000/mjpg"
+            welcome = f"Connected! Camera: http://{ip_addr}:9000/mjpg"
             send_response(welcome)
             
             try:
