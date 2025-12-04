@@ -33,14 +33,29 @@ px = None  # Global PiCar reference
 
 
 def initialize_camera():
-    """Initialize the camera"""
+    """Initialize the camera using V4L2 backend (more reliable on Raspberry Pi)"""
     global camera
     if camera is None:
-        camera = cv2.VideoCapture(0)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        # Use V4L2 backend instead of GStreamer to avoid memory issues
+        camera = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        
+        # Set lower resolution for better performance on Pi
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+        camera.set(cv2.CAP_PROP_FPS, 15)  # Lower FPS for stability
+        camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer to save memory
+        
         time.sleep(1)
-        print("Camera initialized")
+        
+        # Verify camera is actually working
+        if camera.isOpened():
+            ret, test_frame = camera.read()
+            if ret:
+                print("Camera initialized successfully (320x240 @ 15fps)")
+            else:
+                print("WARNING: Camera opened but cannot read frames!")
+        else:
+            print("ERROR: Failed to open camera!")
     return camera
 
 
