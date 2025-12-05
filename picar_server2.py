@@ -225,25 +225,23 @@ def steering_loop():
         px.set_dir_servo_angle(current_angle)
         sleep(0.001)
 
-def drive_loop():
+def drive_loop(data):
     global target_angle, running, px, connection_socket
-    while running:
-        data = connection_socket.recv(1024).decode()
-        match data:
-            case 'start forward':
-                px.forward(80)
-            case 'start backward':
-                px.backward(80)
-            case 'start left':
-                target_angle = -35
-            case 'start right':
-                target_angle = 35
-            case 'stop forward':
-                px.forward(0)
-            case 'stop backward':
-                px.forward(0)
-            case 'stop left' | 'stop right':
-                target_angle = 0
+    match data:
+        case 'start forward':
+            px.forward(80)
+        case 'start backward':
+            px.backward(80)
+        case 'start left':
+            target_angle = -35
+        case 'start right':
+            target_angle = 35
+        case 'stop forward':
+            px.forward(0)
+        case 'stop backward':
+            px.forward(0)
+        case 'stop left' | 'stop right':
+            target_angle = 0
 
 def handle_command(action, command):
     """Process a command from the client: action=start/stop, command=name."""
@@ -444,8 +442,6 @@ def main():
     # Start steering thread
     steer_thread = threading.Thread(target=steering_loop, daemon=True)
     steer_thread.start()
-    drive_thread = threading.Thread(target=drive_loop())
-    drive_thread.start()
 
     # Get IP address for display
     ip_addr = get_ip_address()
@@ -492,6 +488,7 @@ def main():
                     command = parts[1]
 
                     response, should_quit = handle_command(action, command)
+                    drive_loop(text)
                     send_response(response)
 
                     if should_quit:
