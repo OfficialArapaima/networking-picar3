@@ -344,6 +344,9 @@ def main():
     # Start camera immediately so user can view it
     print("Starting camera...")
     initialize_camera()
+
+    toggle_face_detect()
+    toggle_color_detect()
     
     # Get IP address for display
     ip_addr = get_ip_address()
