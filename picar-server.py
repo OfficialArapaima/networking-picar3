@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-"""
-PiCar-X Server - Runs on Raspberry Pi
-Handles motor control, camera streaming, and detection modes.
-Camera view available at http://<pi-ip>:9000/mjpg
-"""
 
 import sys
 import os
@@ -50,9 +45,7 @@ def initialize_camera():
             sleep(1)  # Give camera time to start
             camera_started = True
             print("Camera started successfully!")
-            print("\nTry these URLs in your browser:")
-            print("  http://<pi-ip>:9000/mjpg")
-            print("  http://<pi-ip>:9000/")
+            print("  http:0.0.0.0:9000/mjpg")
         except Exception as e:
             print(f"Camera error: {e}")
             camera_started = False
@@ -175,27 +168,6 @@ def set_color_detect(color_num):
     return msg
 
 
-def toggle_qr_detect():
-    """Toggle QR code detection on/off"""
-    global face_detect_on, color_detect_on, qr_detect_on
-    
-    initialize_camera()
-    
-    # Turn off other modes
-    if face_detect_on:
-        Vilib.face_detect_switch(False)
-        face_detect_on = False
-    if color_detect_on:
-        Vilib.color_detect('close')
-        color_detect_on = False
-    
-    qr_detect_on = not qr_detect_on
-    Vilib.qrcode_detect_switch(qr_detect_on)
-    
-    status = "ON" if qr_detect_on else "OFF"
-    msg = f"QR detection: {status}"
-    print(msg)
-    return msg
 
 
 def get_detection_info():
@@ -307,10 +279,7 @@ def handle_command(cmd):
         response = toggle_color_detect()
         
     elif cmd in '0123456':
-        response = set_color_detect(int(cmd))
-        
-    elif cmd == 'r':
-        response = toggle_qr_detect()
+        response = set_color_detect(int(cmd))       
     
     # Info/utility
     elif cmd == 'n':
@@ -388,7 +357,7 @@ def main():
     print("=" * 50)
     print("PiCar-X Server Started")
     print(f"Control port: {SERVER_PORT}")
-    print(f"Camera stream: http://{ip_addr}:9000/mjpg")
+    print(f"Camera stream: http:0.0.0.0:9000/mjpg")
     print("=" * 50)
     
     try:
@@ -398,7 +367,7 @@ def main():
             print(f"Client connected: {addr[0]}:{addr[1]}")
             
             # Send welcome message
-            welcome = f"Connected! Camera: http://{ip_addr}:9000/mjpg"
+            welcome = f"Connected! http://{ip_addr}:9000/mjpg"
             send_response(welcome)
             
             try:

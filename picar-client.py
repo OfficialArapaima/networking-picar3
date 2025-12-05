@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""
-PiCar-X Client - Runs on Mac/PC
-Sends keyboard commands to control the PiCar-X robot.
-View camera at http://<pi-ip>:9000/mjpg in your browser.
-"""
+
 
 from socket import socket, AF_INET, SOCK_STREAM, timeout
 from time import sleep
@@ -30,11 +26,11 @@ MANUAL = '''
 ║                                                              ║
 ║  UTILITY                                                     ║
 ║    p : Take photo (saved on Pi)                              ║
-║    n : Show detection info                                   ║
-║    h : Help                                                  ║
 ║    q : Quit                                                  ║
 ║                                                              ║
-║  Camera view: http://<pi-ip>:9000/mjpg                       ║
+║                                                              ║
+║                                                              ║
+║  Camera view: http:0.0.0.0:9000/mjpg                         ║
 ╚══════════════════════════════════════════════════════════════╝
 '''
 
@@ -42,7 +38,6 @@ running = True
 
 
 def receive_responses(client_socket):
-    """Background thread to receive and display server responses"""
     global running
     
     while running:
@@ -79,7 +74,7 @@ def main():
     # Get server address
     server_ip = input("Enter PiCar IP address: ").strip()
     if not server_ip:
-        print("No IP provided. Exiting.")
+        print("Bad IP")
         return
     
     server_port = 12000
@@ -92,7 +87,7 @@ def main():
         client_socket.connect((server_ip, server_port))
         print("Connected!\n")
     except Exception as e:
-        print(f"Failed to connect: {e}")
+        print(f"Connection Failed: {e}")
         return
     
     # Start response receiver thread
@@ -101,9 +96,6 @@ def main():
     
     # Show controls
     print(MANUAL)
-    
-    print(f"\nCamera stream: http://{server_ip}:9000/mjpg")
-    print("Open this URL in your browser to view the camera.\n")
     
     valid_commands = 'wasxdikjl+-=_fcr0123456pnhq'
     
@@ -135,7 +127,7 @@ def main():
                     sleep(0.3)
                     break
             else:
-                print(f"\r  [Invalid key: '{key}' - press 'h' for help]")
+                print("Invalid Key")
             
             sleep(0.05)
             
@@ -153,7 +145,7 @@ def main():
             pass
         
         client_socket.close()
-        print("\nDisconnected from PiCar-X")
+        print("\nDisconnected from the Server")
 
 
 if __name__ == "__main__":
