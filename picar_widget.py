@@ -269,7 +269,6 @@ class KeyboardControl(QWidget):
             btn.setStyleSheet(self.base_style)
             btn.released.emit()
 
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     widget = KeyboardControl()

@@ -37,140 +37,165 @@ connection_socket = None
 px = None
 
 
+"""
+Start the camera with web streaming.
+
+Raises:
+    CameraError: Raises an error that the camera didn't initialize correctly.
+"""
 def initialize_camera():
-    """Start camera with web streaming"""
     global camera_started
+    # if the camera is not started then initialize it, otherwise don't do anything
     if not camera_started:
         try:
             print("Initializing camera...")
+            # start the camera without flipping in the vertical or horizontal view.
             Vilib.camera_start(vflip=False, hflip=False)
             sleep(0.5)
-            # web=True enables Flask web server, local=False for headless operation
+            # web=True enables Flask web server
             Vilib.display(local=False, web=True)
             sleep(1)  # Give camera time to start
             camera_started = True
             print("Camera started successfully!")
-            # print("  http:0.0.0.0:9000/mjpg")
-        except Exception as e:
-            print(f"Camera error: {e}")
+        except Exception as CameraError:
+            print(f"Camera error: {CameraError}")
             camera_started = False
 
 
+"""
+Sends a text response to the client.
+
+Args:
+    msg: The message to be returned to the client.
+
+Raises:
+    SendError: Exception raised when trying to send back to client.
+"""
 def send_response(msg):
-    """Send text response to client"""
     global connection_socket
     try:
         if connection_socket:
             connection_socket.send(msg.encode())
-    except Exception as e:
-        print(f"Error sending response: {e}")
+    except Exception as SendError:
+        print(f"Error sending response: {SendError}")
 
 
+"""
+Takes and saves a photo locally on the Pi
+
+Returns:
+    The full path of where the photo gets saved to.
+
+Raises:
+    PhotoError: Raises an exception if there was an issue taking the photo.
+"""
 def take_photo():
-    """Take and save photo locally on Pi"""
+    # Tries to initialize the camera if it isn't already
     initialize_camera()
-    _time = strftime('%Y-%m-%d-%H-%M-%S', localtime(time()))
-    name = f'photo_{_time}'
-    username = os.getlogin()
-    path = f"/home/{username}/Pictures/"
 
-    # Create directory if needed
-    os.makedirs(path, exist_ok=True)
+    # Sets the specific time the photo was taken
+    try:
+        _time = strftime('%Y-%m-%d-%H-%M-%S', localtime(time()))
 
-    Vilib.take_photo(name, path)
-    full_path = f"{path}{name}.jpg"
-    print(f"Photo saved: {full_path}")
-    return full_path
+        # Names the photo based on the time and then puts it in the user's Pictures
+        name = f'PiCarPhoto_{_time}'
+        username = os.getlogin()
+        path = f"/home/{username}/Pictures/"
+
+        # Create directory if needed
+        os.makedirs(path, exist_ok=True)
+
+        # Actually takes the photo
+        Vilib.take_photo(name, path)
+        full_path = f"{path}{name}.jpg"
+        print(f"Photo saved: {full_path}")
+        return full_path
+    except Exception as PhotoError:
+        return f"Photo path error occured. Error: {PhotoError}"
 
 
+"""
+Toggles face detection on/off
+
+Returns:
+    The status of if face detection is on or off or the error that occured.
+
+Raises:
+    FaceToggleError: Raises and exception if there is an error with toggling the face detection.
+"""
 def toggle_face_detect():
-    """Toggle face detection on/off"""
     global face_detect_on, color_detect_on, qr_detect_on
 
+    # Tries to initialize the camera if it isn't already
     initialize_camera()
 
-    # Turn off other modes
-    if color_detect_on:
-        Vilib.color_detect('close')
-        color_detect_on = False
-    if qr_detect_on:
-        Vilib.qrcode_detect_switch(False)
-        qr_detect_on = False
-
-    face_detect_on = not face_detect_on
-    Vilib.face_detect_switch(face_detect_on)
-
-    status = "ON" if face_detect_on else "OFF"
-    msg = f"Face detection: {status}"
-    print(msg)
-    return msg
-
-
-def toggle_color_detect():
-    """Toggle color detection and cycle through colors"""
-    global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
-
-    initialize_camera()
-
-    # Turn off other modes
-    if face_detect_on:
-        Vilib.face_detect_switch(False)
-        face_detect_on = False
-    if qr_detect_on:
-        Vilib.qrcode_detect_switch(False)
-        qr_detect_on = False
-
-    if color_detect_on:
-        # Cycle to next color
-        current_color_idx = (current_color_idx + 1) % len(color_list)
-        if current_color_idx == 0:
-            # Cycled through all - turn off
+    try:
+        # Turn off other modes
+        if color_detect_on:
             Vilib.color_detect('close')
             color_detect_on = False
-            msg = "Color detection: OFF"
-        else:
-            color = color_list[current_color_idx]
-            Vilib.color_detect(color)
-            msg = f"Color detection: {color}"
-    else:
-        # Turn on with first color
-        current_color_idx = 0
-        color = color_list[current_color_idx]
-        Vilib.color_detect(color)
-        color_detect_on = True
-        msg = f"Color detection: {color}"
+        if qr_detect_on:
+            Vilib.qrcode_detect_switch(False)
+            qr_detect_on = False
 
-    print(msg)
-    return msg
+        face_detect_on = not face_detect_on
+        Vilib.face_detect_switch(face_detect_on)
 
+        status = "ON" if face_detect_on else "OFF"
+        msg = f"Face detection: {status}"
+        print(msg)
+        return msg
+    except Exception as FaceToggleError:
+        return f'Error with face detection. Error: {FaceToggleError}'
 
-def set_color_detect(color_num):
-    """Set specific color detection (1-6)"""
+"""
+Toggle color detection and cycle through available colors
+
+Returns:
+    The current color that it is looking for or the error that occured.
+
+Raises:
+    ToggleColorError: Raises an exception if there is an error with toggling the color detection.
+"""
+def toggle_color_detect():
     global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
 
+    # Tries to initialize the camera if it isn't already
     initialize_camera()
 
-    # Turn off other modes
-    if face_detect_on:
-        Vilib.face_detect_switch(False)
-        face_detect_on = False
-    if qr_detect_on:
-        Vilib.qrcode_detect_switch(False)
-        qr_detect_on = False
+    try:
+        # Turn off other modes
+        if face_detect_on:
+            Vilib.face_detect_switch(False)
+            face_detect_on = False
+        if qr_detect_on:
+            Vilib.qrcode_detect_switch(False)
+            qr_detect_on = False
 
-    if color_num == 0:
-        Vilib.color_detect('close')
-        color_detect_on = False
-        msg = "Color detection: OFF"
-    else:
-        current_color_idx = color_num - 1
-        color = color_list[current_color_idx]
-        Vilib.color_detect(color)
-        color_detect_on = True
-        msg = f"Color detection: {color}"
+        if color_detect_on:
+            # Cycle to next color
+            current_color_idx = (current_color_idx + 1) % len(color_list)
+            if current_color_idx == 0:
+                # Cycled through all - turn off
+                Vilib.color_detect('close')
+                color_detect_on = False
+                msg = "Color detection: OFF"
+            else:
+                color = color_list[current_color_idx]
+                Vilib.color_detect(color)
+                msg = f"Color detection: {color}"
+        else:
+            # Turn on with first color
+            current_color_idx = 0
+            color = color_list[current_color_idx]
+            Vilib.color_detect(color)
+            color_detect_on = True
+            msg = f"Color detection: {color}"
 
-    print(msg)
-    return msg
+        print(msg)
+        return msg
+    except Exception as ToggleColorError:
+        return f'Error with color detection. Error: {ToggleColorError}'
 
 
 def get_detection_info():
@@ -208,13 +233,25 @@ def get_detection_info():
     return " | ".join(info_parts)
 
 
+"""
+Clamps the value between a min and a max number so that it doesn't exceed a max or fall below the min
+
+Args:
+    value: Value that is trying to be set
+    min_val: The minimum value allowed
+    max_val: The maximum value allowed
+
+Returns:
+    Either the value you are trying to set or the min/max if you go over either one
+"""
 def clamp(value, min_val, max_val):
-    """Clamp value between min and max"""
     return max(min_val, min(max_val, value))
 
 
+"""
+A background loop to smoothly move steering towards target_angle without slowing the response time.
+"""
 def steering_loop():
-    """Background loop to smoothly move steering towards target_angle."""
     global current_angle, target_angle, running, px
     while running:
         if current_angle < target_angle:
@@ -225,6 +262,9 @@ def steering_loop():
         px.set_dir_servo_angle(current_angle)
         sleep(0.001)
 
+"""
+Loop that the car should use to handle the actual driving part. 
+"""
 def drive_loop(data):
     global target_angle, running, px, connection_socket
     match data:
@@ -233,80 +273,40 @@ def drive_loop(data):
         case 'start backward':
             px.backward(80)
         case 'start left':
-            target_angle = -35
+            target_angle = -30
         case 'start right':
-            target_angle = 35
+            target_angle = 30
         case 'stop forward':
             px.forward(0)
         case 'stop backward':
             px.forward(0)
-        case 'stop left' | 'stop right':
+        case 'stop left':
+            target_angle = 0
+        case 'stop right':
             target_angle = 0
 
+"""
+Process a command from the client: action=start/stop, command=name.
+"""
 def handle_command(action, command):
-    """Process a command from the client: action=start/stop, command=name."""
     global current_speed, pan_angle, tilt_angle, px, target_angle
+
 
     action = action.lower()
     command = command.lower()
     response = ""
     should_quit = False
 
-    # ---------- Movement ----------
-    
-    
-    
-    
-    # if command == "forward":
-    #     if action == "start":
-    #         px.forward(current_speed)
-    #         response = f"Forward (speed: {current_speed})"
-    #     elif action == "stop":
-    #         px.stop()
-    #         response = "Stopped (forward)"
-
-    # elif command == "backward":
-    #     if action == "start":
-    #         px.backward(current_speed)
-    #         response = f"Backward (speed: {current_speed})"
-    #     elif action == "stop":
-    #         px.stop()
-    #         response = "Stopped (backward)"
-
-    # elif command == "left":
-    #     if action == "start":
-    #         target_angle = -35
-    #         px.forward(current_speed)
-    #         response = f"Turning left (target_angle: {target_angle}, speed: {current_speed})"
-    #     elif action == "stop":
-    #         target_angle = 0
-    #         px.stop()
-    #         response = "Stopped (left), steering returning to center"
-
-    # elif command == "right":
-    #     if action == "start":
-    #         target_angle = 35
-    #         px.forward(current_speed)
-    #         response = f"Turning right (target_angle: {target_angle}, speed: {current_speed})"
-    #     elif action == "stop":
-    #         target_angle = 0
-    #         px.stop()
-    #         response = "Stopped (right), steering returning to center"
-
     # ---------- Speed control ----------
     if command == "speed_increase":
-        if action == "start":
+        if action == "stop":
             current_speed = clamp(current_speed + 10, 0, 100)
             response = f"Speed increased to {current_speed}"
-        else:
-            response = f"Speed unchanged ({current_speed})"
 
     elif command == "speed_decrease":
-        if action == "start":
+        if action == "stop":
             current_speed = clamp(current_speed - 10, 0, 100)
             response = f"Speed decreased to {current_speed}"
-        else:
-            response = f"Speed unchanged ({current_speed})"
 
     # ---------- Camera pan/tilt ----------
     elif command == "cam_up":
@@ -343,40 +343,30 @@ def handle_command(action, command):
 
     # ---------- Detection / camera features ----------
     elif command == "toggle_face":
-        if action == "start":
+        if action == "stop":
             response = toggle_face_detect()
-        else:
-            response = "Face toggle ignored on stop"
 
     elif command == "toggle_color":
-        if action == "start":
+        if action == "stop":
             response = toggle_color_detect()
-        else:
-            response = "Color toggle ignored on stop"
 
     elif command == "take_photo":
-        if action == "start":
+        if action == "stop":
             path = take_photo()
             response = f"Photo saved: {path}"
-        else:
-            response = "Photo command ignored on stop"
 
     elif command == "show_detect":
-        if action == "start":
+        if action == "stop":
             response = get_detection_info()
-        else:
-            response = "Detection info ignored on stop"
 
     elif command == "help":
-        if action == "start":
+        if action == "stop":
             response = (
                 "Commands: forward/backward/left/right, "
                 "speed_increase/speed_decrease, "
                 "cam_up/cam_down/cam_left/cam_right, "
                 "toggle_face/toggle_color, take_photo, show_detect, help"
             )
-        else:
-            response = "Help ignored on stop"
 
     # ---------- Optional quit ----------
     elif command in ("quit", "q"):
@@ -385,9 +375,6 @@ def handle_command(action, command):
             should_quit = True
         else:
             response = "Quit ignored on stop"
-
-    else:
-        response = f"Unknown command: action={action}, command={command}"
 
     print(f"[{action} {command}] {response}")
     return response, should_quit
