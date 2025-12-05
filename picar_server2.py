@@ -50,7 +50,7 @@ def initialize_camera():
             sleep(1)  # Give camera time to start
             camera_started = True
             print("Camera started successfully!")
-            print("  http:0.0.0.0:9000/mjpg")
+            # print("  http:0.0.0.0:9000/mjpg")
         except Exception as e:
             print(f"Camera error: {e}")
             camera_started = False
@@ -225,6 +225,25 @@ def steering_loop():
         px.set_dir_servo_angle(current_angle)
         sleep(0.001)
 
+def drive_loop():
+    global target_angle, running, px, connection_socket
+    while running:
+        data = connection_socket.recv(1024).decode()
+        match data:
+            case 'start forward':
+                px.forward(80)
+            case 'start backward':
+                px.backward(80)
+            case 'start left':
+                target_angle = -35
+            case 'start right':
+                target_angle = 35
+            case 'stop forward':
+                px.forward(0)
+            case 'stop backward':
+                px.forward(0)
+            case 'stop left' | 'stop right':
+                target_angle = 0
 
 def handle_command(action, command):
     """Process a command from the client: action=start/stop, command=name."""
@@ -236,44 +255,48 @@ def handle_command(action, command):
     should_quit = False
 
     # ---------- Movement ----------
-    if command == "forward":
-        if action == "start":
-            px.forward(current_speed)
-            response = f"Forward (speed: {current_speed})"
-        elif action == "stop":
-            px.stop()
-            response = "Stopped (forward)"
+    
+    
+    
+    
+    # if command == "forward":
+    #     if action == "start":
+    #         px.forward(current_speed)
+    #         response = f"Forward (speed: {current_speed})"
+    #     elif action == "stop":
+    #         px.stop()
+    #         response = "Stopped (forward)"
 
-    elif command == "backward":
-        if action == "start":
-            px.backward(current_speed)
-            response = f"Backward (speed: {current_speed})"
-        elif action == "stop":
-            px.stop()
-            response = "Stopped (backward)"
+    # elif command == "backward":
+    #     if action == "start":
+    #         px.backward(current_speed)
+    #         response = f"Backward (speed: {current_speed})"
+    #     elif action == "stop":
+    #         px.stop()
+    #         response = "Stopped (backward)"
 
-    elif command == "left":
-        if action == "start":
-            target_angle = -35
-            px.forward(current_speed)
-            response = f"Turning left (target_angle: {target_angle}, speed: {current_speed})"
-        elif action == "stop":
-            target_angle = 0
-            px.stop()
-            response = "Stopped (left), steering returning to center"
+    # elif command == "left":
+    #     if action == "start":
+    #         target_angle = -35
+    #         px.forward(current_speed)
+    #         response = f"Turning left (target_angle: {target_angle}, speed: {current_speed})"
+    #     elif action == "stop":
+    #         target_angle = 0
+    #         px.stop()
+    #         response = "Stopped (left), steering returning to center"
 
-    elif command == "right":
-        if action == "start":
-            target_angle = 35
-            px.forward(current_speed)
-            response = f"Turning right (target_angle: {target_angle}, speed: {current_speed})"
-        elif action == "stop":
-            target_angle = 0
-            px.stop()
-            response = "Stopped (right), steering returning to center"
+    # elif command == "right":
+    #     if action == "start":
+    #         target_angle = 35
+    #         px.forward(current_speed)
+    #         response = f"Turning right (target_angle: {target_angle}, speed: {current_speed})"
+    #     elif action == "stop":
+    #         target_angle = 0
+    #         px.stop()
+    #         response = "Stopped (right), steering returning to center"
 
     # ---------- Speed control ----------
-    elif command == "speed_increase":
+    if command == "speed_increase":
         if action == "start":
             current_speed = clamp(current_speed + 10, 0, 100)
             response = f"Speed increased to {current_speed}"
@@ -415,13 +438,14 @@ def main():
     print("Starting camera...")
     initialize_camera()
 
-    # These were in your original main; keeping for minimal change
-    toggle_face_detect()
-    toggle_color_detect()
+    # toggle_face_detect()
+    # toggle_color_detect()
 
     # Start steering thread
     steer_thread = threading.Thread(target=steering_loop, daemon=True)
     steer_thread.start()
+    drive_thread = threading.Thread(target=drive_loop())
+    drive_thread.start()
 
     # Get IP address for display
     ip_addr = get_ip_address()
