@@ -14,6 +14,7 @@ Press keys on keyboard to control PiCar-X!
     f: Toggle face detection ON/OFF
     q: record/pause/continue
     e: stop
+    z: obstacle avoidance
     ctrl+c: Quit
 Input key to call the funtion!
     f: Turn on/off face detection
@@ -114,7 +115,7 @@ def main():
             key = key.lower()
             if key == "exit":
                 break
-            if key in ('wsadfqe'):
+            if key in ('wsadfqez'):
                 clientSocket.send(key.encode())
                 # Only wait for response on 'f' command (toggle face detection)
                 if 'f' in key:

@@ -12,6 +12,14 @@ from time import sleep,strftime,localtime
 import readchar
 
 serverPort = 12000
+# Obstacle Avoidance settings 
+power = 60
+safe_distance = 45
+warn_distance = 25
+stop_distance = 15
+turn_angle = 45
+turn_time = 1.0
+
 
 # Face detection settings
 face_detection_enabled = False
@@ -162,8 +170,44 @@ def handle_recording_command(command):
 
         sleep(0.1)
 
+# Obstacle Avoidance Logic
+def simple_avoidance():
+    global avoidance_enabled
+    while True:
+        if avoidance_enabled:
+            if face_tracking_enabled:
+                toggle_face_tracking()
+            distance = round(px.ultrasonic.read(),2)
 
-
+            if distance >= safe_distance:
+                px.set_dir_servo_angle(0)
+                px.forward(power)
+            
+            elif distance > warn_distance:
+                turn_direction = random.choice([-1,1])
+                px.set_dir_servo_angle(turn_direction*(TURN_ANGLE/2))
+                px.forward(power)
+                time.sleep(0.1)
+            elif distance >= stop_distance:
+                px.forward(0)
+                time.sleep(0.1)
+                turn_direction = random.choice([-1, 1])
+                px.set_dir_servo_angle(turn_direction * TURN_ANGLE) 
+                px.forward(POWER)
+                time.sleep(TURN_TIME)
+                px.set_dir_servo_angle(0)
+                px.forward(0)
+            else:
+                px.forward(0)
+                time.sleep(0.1)
+                px.set_dir_servo_angle(-10) 
+                px.backward(POWER)
+                time.sleep(0.8)
+                px.set_dir_servo_angle(0)
+                px.forward(0)
+            
+            time.sleep(0.05)
+            
 
 
 
