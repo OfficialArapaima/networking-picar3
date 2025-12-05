@@ -2,7 +2,7 @@ from socket import *
 import sys
 import random
 from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QGridLayout
-from PySide6.QtCore import Slot, Qt, Signal
+from PySide6.QtCore import Slot, Qt
 
 serverName = input('Input the PiCar\'s server address:')
 
@@ -10,56 +10,39 @@ serverPort = 12000
 clientSocket = socket(AF_INET, SOCK_STREAM)
 clientSocket.connect((serverName, serverPort))
 
-class KeyboardControl(QWidget):
-    # direction is one of: "forward", "left", "backward", "right"
-    moveStarted = Signal(str)
-    moveStopped = Signal(str)
+key_to_command = {
+            "W": "forward",
+            "A": "left",
+            "S": "backward",
+            "D": "right",
+        }
 
+class KeyboardControl(QWidget):
     @Slot()
     def buttonPressed(self):
-        key = self.sender().text()
+        key = {
+            "key": self.sender().text(),
+            "command": key_to_command.get(self.sender().text())
+        }
 
-        if key in ('WASD'):
-            if 'W' in key:        
-                clientSocket.send('start forward'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
-            if 'S' in key:        
-                clientSocket.send('start backward'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
-            if 'A' in key:        
-                clientSocket.send('start left'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
-            if 'D' in key:        
-                clientSocket.send('start right'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
+        if key['key'] in ('WASD'):       
+            clientSocket.send(f"start {key['command']}".encode())
+            modifiedSentence = clientSocket.recv(1024)
+            print('From Server: ', modifiedSentence.decode())
         
             
 
     @Slot()
     def buttonReleased(self):
-        key = self.sender().text()
+        key = {
+            "key": self.sender().text(),
+            "command": key_to_command.get(self.sender().text())
+        }
 
-        if key in ('WASD'):
-            if 'W' in key:        
-                clientSocket.send('stop forward'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
-            if 'S' in key:        
-                clientSocket.send('stop backward'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
-            if 'A' in key:        
-                clientSocket.send('stop left'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
-            if 'D' in key:        
-                clientSocket.send('stop right'.encode())
-                modifiedSentence = clientSocket.recv(1024)
-                print('From Server: ', modifiedSentence.decode())
+        if key['key'] in ('WASD'):       
+            clientSocket.send(f"stop {key['command']}".encode())
+            modifiedSentence = clientSocket.recv(1024)
+            print('From Server: ', modifiedSentence.decode())
 
     def __init__(self, parent=None):
         super().__init__(parent)
