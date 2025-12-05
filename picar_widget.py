@@ -1,105 +1,253 @@
 from socket import *
 import sys
-import random
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget, QGridLayout
+from PySide6.QtWidgets import (
+    QApplication,
+    QPushButton,
+    QWidget,
+    QGridLayout,
+    QLabel,
+    QVBoxLayout,
+    QHBoxLayout,
+)
 from PySide6.QtCore import Slot, Qt
 
-serverName = input('Input the PiCar\'s server address:')
+serverName = input("Input the PiCar's server address: ")
 
 serverPort = 12000
 clientSocket = socket(AF_INET, SOCK_STREAM)
 clientSocket.connect((serverName, serverPort))
 
+# Keys physically available on the UI / keyboard
+available_keys = "wasxdikjl+-=_fcrpnhq"
+
+# Commands (use UPPERCASE for letter keys as the canonical form)
 key_to_command = {
-            "W": "forward",
-            "A": "left",
-            "S": "backward",
-            "D": "right",
-        }
+    "W": "forward",
+    "A": "left",
+    "S": "backward",
+    "D": "right",
+    "I": "cam_up",
+    "K": "cam_down",
+    "J": "cam_left",
+    "L": "cam_right",
+    "=": "speed_increase",
+    "-": "speed_decrease",
+    "F": "toggle_face",
+    "C": "toggle_color",
+    "P": "take_photo",
+    "N": "show_detect",
+    "H": "help",
+}
+
+# Human-friendly labels for buttons
+button_labels = {
+    "W": "Forward",
+    "A": "Left",
+    "S": "Backward",
+    "D": "Right",
+    "I": "Camera Up",
+    "K": "Camera Down",
+    "J": "Camera Left",
+    "L": "Camera Right",
+    "=": "Increase Speed",
+    "-": "Decrease Speed",
+    "F": "Toggle Face Detect",
+    "C": "Toggle Color Mode",
+    "P": "Take Photo",
+    "N": "Show Detection",
+    "H": "Help",
+}
+
+# Keys that are continuous (start on press, stop on release)
+CONTINUOUS_KEYS = {"W", "A", "S", "D", "I", "J", "K", "L", "=", "-"}
+
+# Keys that are toggles / one-shot (activate on release only)
+TOGGLE_KEYS = {"F", "C", "P", "N", "H"}
+
+# Map logical key -> Qt key (for keyboard handling)
+KEY_TO_QT = {
+    "W": Qt.Key_W,
+    "A": Qt.Key_A,
+    "S": Qt.Key_S,
+    "D": Qt.Key_D,
+    "I": Qt.Key_I,
+    "J": Qt.Key_J,
+    "K": Qt.Key_K,
+    "L": Qt.Key_L,
+    "=": Qt.Key_Equal,
+    "-": Qt.Key_Minus,
+    "F": Qt.Key_F,
+    "C": Qt.Key_C,
+    "P": Qt.Key_P,
+    "N": Qt.Key_N,
+    "H": Qt.Key_H,
+}
+
 
 class KeyboardControl(QWidget):
-    @Slot()
-    def buttonPressed(self):
-        key = {
-            "key": self.sender().text(),
-            "command": key_to_command.get(self.sender().text())
-        }
-
-        if key['key'] in ('WASD'):       
-            clientSocket.send(f"start {key['command']}".encode())
-            modifiedSentence = clientSocket.recv(1024)
-            print('From Server: ', modifiedSentence.decode())
-        
-            
-
-    @Slot()
-    def buttonReleased(self):
-        key = {
-            "key": self.sender().text(),
-            "command": key_to_command.get(self.sender().text())
-        }
-
-        if key['key'] in ('WASD'):       
-            clientSocket.send(f"stop {key['command']}".encode())
-            modifiedSentence = clientSocket.recv(1024)
-            print('From Server: ', modifiedSentence.decode())
-
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.setWindowTitle("WASD Controller")
+        self.setWindowTitle("PiCar Controller")
         self.setFocusPolicy(Qt.StrongFocus)  # so we get key events
 
         # Base and active styles
         self.base_style = (
             "QPushButton {"
-            "  font-size: 24px;"
-            "  min-width: 60px;"
-            "  min-height: 60px;"
+            "  font-size: 18px;"
+            "  min-width: 140px;"
+            "  min-height: 40px;"
             "}"
         )
-        self.active_style = self.base_style + " QPushButton { background-color: #87cefa; }"
+        self.active_style = (
+            "QPushButton {"
+            "  font-size: 18px;"
+            "  min-width: 140px;"
+            "  min-height: 40px;"
+            "  background-color: #87cefa;"
+            "}"
+        )
 
-        # Create buttons
-        self.btn_w = QPushButton("W")
-        self.btn_a = QPushButton("A")
-        self.btn_s = QPushButton("S")
-        self.btn_d = QPushButton("D")
+        # Create all buttons once, keyed by logical key (e.g. "W", "F", "=")
+        self.buttons = {}
+        self.button_to_key = {}  # QPushButton -> logical key
 
-        self.key_to_button = {
-            Qt.Key_W: self.btn_w,
-            Qt.Key_S: self.btn_s,
-            Qt.Key_A: self.btn_a,
-            Qt.Key_D: self.btn_d,
-        }
+        for ch in available_keys:
+            # Canonical logical key: letters uppercase, symbols as-is
+            key = ch.upper() if ch.isalpha() else ch
 
-        for btn in (self.btn_w, self.btn_a, self.btn_s, self.btn_d):
+            # Only build buttons for keys we actually have commands for
+            if key not in key_to_command:
+                continue
+
+            label_text = button_labels.get(key, f"Key {key}")
+            btn = QPushButton(f"{label_text} ({key})")
             btn.setStyleSheet(self.base_style)
-            btn.setFocusPolicy(Qt.NoFocus)  # keep focus on the main widget
+            btn.setFocusPolicy(Qt.NoFocus)
 
-        # Layout: W on top, A S D on bottom row
-        layout = QGridLayout()
-        layout.addWidget(self.btn_w, 0, 1)
-        layout.addWidget(self.btn_a, 1, 0)
-        layout.addWidget(self.btn_s, 1, 1)
-        layout.addWidget(self.btn_d, 1, 2)
-        self.setLayout(layout)
+            self.buttons[key] = btn
+            self.button_to_key[btn] = key
 
-        # Track which directions are currently active
-        self.active_dirs = set()
+        # Layouts
+        main_layout = QGridLayout()
+        main_layout.setHorizontalSpacing(40)
 
-        # Mouse press/release on buttons should behave the same as keys
-        self.btn_w.pressed.connect(self.buttonPressed)
-        self.btn_a.pressed.connect(self.buttonPressed)
-        self.btn_s.pressed.connect(self.buttonPressed)
-        self.btn_d.pressed.connect(self.buttonPressed)
+        # --- Car controls (WASD + speed) ---
+        car_label = QLabel("Car Controls")
+        car_label.setAlignment(Qt.AlignHCenter)
 
-        self.btn_w.released.connect(self.buttonReleased)
-        self.btn_a.released.connect(self.buttonReleased)
-        self.btn_s.released.connect(self.buttonReleased)
-        self.btn_d.released.connect(self.buttonReleased)
+        car_grid = QGridLayout()
+        # WASD positions
+        car_positions = {
+            "W": (0, 1),
+            "A": (1, 0),
+            "S": (1, 1),
+            "D": (1, 2),
+        }
+        for key, (r, c) in car_positions.items():
+            if key in self.buttons:
+                car_grid.addWidget(self.buttons[key], r, c)
 
-    # # ---------- keyboard handling ----------
+        # Speed controls row
+        speed_layout = QHBoxLayout()
+        for key in ["-", "="]:
+            if key in self.buttons:
+                speed_layout.addWidget(self.buttons[key])
+
+        car_column = QVBoxLayout()
+        car_column.addWidget(car_label)
+        car_column.addLayout(car_grid)
+        car_column.addLayout(speed_layout)
+
+        # --- Camera controls (IJKL) ---
+        cam_label = QLabel("Camera Controls")
+        cam_label.setAlignment(Qt.AlignHCenter)
+
+        cam_grid = QGridLayout()
+        cam_positions = {
+            "I": (0, 1),
+            "J": (1, 0),
+            "K": (1, 1),
+            "L": (1, 2),
+        }
+        for key, (r, c) in cam_positions.items():
+            if key in self.buttons:
+                cam_grid.addWidget(self.buttons[key], r, c)
+
+        cam_column = QVBoxLayout()
+        cam_column.addWidget(cam_label)
+        cam_column.addLayout(cam_grid)
+
+        # --- Other controls (toggles) ---
+        other_label = QLabel("Other Controls")
+        other_label.setAlignment(Qt.AlignHCenter)
+
+        other_column = QVBoxLayout()
+        other_column.addWidget(other_label)
+        for key in ["F", "C", "P", "N", "H"]:
+            if key in self.buttons:
+                other_column.addWidget(self.buttons[key])
+
+        # Add the three columns to the main layout
+        main_layout.addLayout(car_column, 0, 0)
+        main_layout.addLayout(cam_column, 0, 1)
+        main_layout.addLayout(other_column, 0, 2)
+
+        self.setLayout(main_layout)
+
+        # Map Qt keys to buttons for keyboard handling
+        self.key_to_button = {}
+        for key, btn in self.buttons.items():
+            qt_key = KEY_TO_QT.get(key)
+            if qt_key is not None:
+                self.key_to_button[qt_key] = btn
+
+        # Connect all buttons that have commands
+        for btn in self.button_to_key.keys():
+            btn.pressed.connect(self.buttonPressed)
+            btn.released.connect(self.buttonReleased)
+
+    # ---------- networking helper ----------
+
+    def _send_command(self, action: str, key_char: str):
+        command = key_to_command.get(key_char)
+        if not command:
+            return
+
+        clientSocket.send(f"{action} {command}".encode())
+        modifiedSentence = clientSocket.recv(1024)
+        print("From Server:", modifiedSentence.decode())
+
+    # ---------- button slots ----------
+
+    @Slot()
+    def buttonPressed(self):
+        sender = self.sender()
+        key_char = self.button_to_key.get(sender)
+        if not key_char:
+            return
+
+        # Continuous controls: start on press
+        if key_char in CONTINUOUS_KEYS:
+            self._send_command("start", key_char)
+        # Toggle controls: do nothing on press (only on release)
+
+    @Slot()
+    def buttonReleased(self):
+        sender = self.sender()
+        key_char = self.button_to_key.get(sender)
+        if not key_char:
+            return
+
+        # Continuous controls: stop on release
+        if key_char in CONTINUOUS_KEYS:
+            self._send_command("stop", key_char)
+
+        # Toggle controls: activate on release
+        elif key_char in TOGGLE_KEYS:
+            self._send_command("start", key_char)
+
+    # ---------- keyboard handling ----------
 
     def keyPressEvent(self, event):
         if event.isAutoRepeat():
@@ -110,8 +258,6 @@ class KeyboardControl(QWidget):
             btn.setDown(True)
             btn.setStyleSheet(self.active_style)
             btn.pressed.emit()
-
-
 
     def keyReleaseEvent(self, event):
         if event.isAutoRepeat():
@@ -127,6 +273,5 @@ class KeyboardControl(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     widget = KeyboardControl()
-
     widget.show()
     sys.exit(app.exec())
