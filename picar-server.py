@@ -15,6 +15,8 @@ SERVER_PORT = 12000
 # Detection state
 face_detect_on = False
 color_detect_on = False
+detection_running = False
+face_detection_on = True
 
 current_color_idx = 0
 color_list = ['red', 'orange', 'yellow', 'green', 'blue', 'purple']
