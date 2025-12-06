@@ -467,96 +467,179 @@ def get_ip_address():
         return "<pi-ip>"
 
 
-def main():
-    global connection_socket, px, running
+# def main():
+#     global connection_socket, px, running
 
+#     # Initialize PiCar first
+#     px = Picarx()
+#     px.set_cam_tilt_angle(0)
+#     px.set_cam_pan_angle(0)
+
+#     # Start camera immediately so user can view it
+#     print("Starting camera...")
+#     initialize_camera()
+
+#     # toggle_face_detect()
+#     # toggle_color_detect()
+
+#     # Start steering thread
+#     steer_thread = threading.Thread(target=steering_loop, daemon=True)
+#     steer_thread.start()
+
+#     # Get IP address for display
+#     ip_addr = get_ip_address()
+
+#     # Create server socket
+#     server_socket = socket(AF_INET, SOCK_STREAM)
+#     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+#     server_socket.bind(("", SERVER_PORT))
+#     server_socket.listen(1)
+
+#     print("=" * 50)
+#     print("PiCar-X Server Started")
+#     print(f"Control port: {SERVER_PORT}")
+#     print(f"Camera stream: http:0.0.0.0:9000/mjpg")
+#     print("=" * 50)
+
+#     try:
+#         while True:
+#             print("\nWaiting for client connection...")
+#             connection_socket, addr = server_socket.accept()
+#             print(f"Client connected: {addr[0]}:{addr[1]}")
+
+#             # Send welcome message
+#             welcome = f"Connected! http://{ip_addr}:9000/mjpg"
+#             send_response(welcome)
+
+#             try:
+#                 # Reset line buffer for this connection
+#                 global recv_buffer
+#                 recv_buffer = b""
+
+#                 while True:
+#                     text = recv_line(connection_socket)
+#                     if text is None:
+#                         print("Client disconnected")
+#                         break
+
+#                     text = text.strip()
+#                     if not text:
+#                         continue
+
+#                     print(f"Received from client: {text}")
+
+#                     parts = text.split()
+#                     if len(parts) < 2:
+#                         response = f"Malformed command: '{text}'"
+#                         send_response(response)
+#                         continue
+
+#                     action = parts[0]
+#                     command = parts[1]
+
+#                     response, should_quit = handle_command(action, command)
+#                     drive_loop(text)
+#                     send_response(response)
+
+#                     if should_quit:
+#                         cleanup()
+#                         connection_socket.close()
+#                         server_socket.close()
+#                         print("Server shutdown complete")
+#                         sys.exit(0)
+
+
+#             except Exception as e:
+#                 print(f"Error handling client: {e}")
+#             finally:
+#                 if px:
+#                     px.stop()
+#                 if connection_socket:
+#                     connection_socket.close()
+
+#     except KeyboardInterrupt:
+#         print("\nServer interrupted")
+#     finally:
+#         cleanup()
+#         server_socket.close()
+
+
+# if __name__ == "__main__":
+#     try:
+#         main()
+#     except Exception as e:
+#         print(f"Fatal error: {e}")
+#         cleanup()
+
+
+def main():
+    global connection_socket, px
+    
     # Initialize PiCar first
     px = Picarx()
     px.set_cam_tilt_angle(0)
     px.set_cam_pan_angle(0)
-
-    # Start camera immediately so user can view it
-    print("Starting camera...")
+    
+    # Start camera with auto-enabled face + color detection
+    print("Starting camera with detection...")
     initialize_camera()
-
-    # toggle_face_detect()
-    # toggle_color_detect()
-
-    # Start steering thread
-    steer_thread = threading.Thread(target=steering_loop, daemon=True)
-    steer_thread.start()
-
+    
     # Get IP address for display
     ip_addr = get_ip_address()
-
+    
     # Create server socket
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(("", SERVER_PORT))
     server_socket.listen(1)
-
+    
     print("=" * 50)
     print("PiCar-X Server Started")
     print(f"Control port: {SERVER_PORT}")
     print(f"Camera stream: http:0.0.0.0:9000/mjpg")
     print("=" * 50)
-
+    
     try:
         while True:
             print("\nWaiting for client connection...")
             connection_socket, addr = server_socket.accept()
             print(f"Client connected: {addr[0]}:{addr[1]}")
-
+            
             # Send welcome message
             welcome = f"Connected! http://{ip_addr}:9000/mjpg"
             send_response(welcome)
-
+            
             try:
-                # Reset line buffer for this connection
-                global recv_buffer
-                recv_buffer = b""
-
                 while True:
-                    text = recv_line(connection_socket)
-                    if text is None:
+                    data = connection_socket.recv(1024)
+                    if not data:
                         print("Client disconnected")
                         break
-
-                    text = text.strip()
-                    if not text:
-                        continue
-
-                    print(f"Received from client: {text}")
-
-                    parts = text.split()
-                    if len(parts) < 2:
-                        response = f"Malformed command: '{text}'"
+                    
+                    cmd = data.decode().lower()
+                    
+                    for c in cmd:  # Handle multiple chars if sent together
+                        response, should_quit = handle_command(c)
                         send_response(response)
-                        continue
-
-                    action = parts[0]
-                    command = parts[1]
-
-                    response, should_quit = handle_command(action, command)
-                    drive_loop(text)
-                    send_response(response)
-
-                    if should_quit:
-                        cleanup()
-                        connection_socket.close()
-                        server_socket.close()
-                        print("Server shutdown complete")
-                        sys.exit(0)
-
-
+                        
+                        if should_quit:
+                            cleanup()
+                            connection_socket.close()
+                            server_socket.close()
+                            print("Server shutdown complete")
+                            sys.exit(0)
+                    
+                    # Brief stop after movement commands
+                    if cmd in 'wasd':
+                        sleep(0.3)
+                        px.stop()
+                        
             except Exception as e:
                 print(f"Error handling client: {e}")
             finally:
-                if px:
-                    px.stop()
-                if connection_socket:
-                    connection_socket.close()
-
+                px.stop()
+                connection_socket.close()
+                
     except KeyboardInterrupt:
         print("\nServer interrupted")
     finally:
