@@ -36,6 +36,27 @@ running = True
 connection_socket = None
 px = None
 
+def recv_line(sock):
+    """
+    Read a single newline-terminated line from the client.
+    Returns:
+        The decoded line (without the trailing newline) or
+        None if the connection is closed.
+    """
+    global recv_buffer
+
+    while True:
+        # Do we already have a full line in the buffer?
+        if b"\n" in recv_buffer:
+            line, recv_buffer = recv_buffer.split(b"\n", 1)
+            return line.decode(errors="ignore").rstrip("\r")
+
+        # Otherwise, read more data
+        chunk = sock.recv(1024)
+        if not chunk:
+            # Connection closed
+            return None
+        recv_buffer += chunk
 
 """
 Start the camera with web streaming.
@@ -75,7 +96,10 @@ def send_response(msg):
     global connection_socket
     try:
         if connection_socket:
-            connection_socket.send(msg.encode())
+            # Ensure every response is newline-terminated
+            if not msg.endswith("\n"):
+                msg = msg + "\n"
+            connection_socket.sendall(msg.encode())
     except Exception as SendError:
         print(f"Error sending response: {SendError}")
 
@@ -456,13 +480,20 @@ def main():
             send_response(welcome)
 
             try:
+                # Reset line buffer for this connection
+                global recv_buffer
+                recv_buffer = b""
+
                 while True:
-                    data = connection_socket.recv(1024)
-                    if not data:
+                    text = recv_line(connection_socket)
+                    if text is None:
                         print("Client disconnected")
                         break
 
-                    text = data.decode().strip()
+                    text = text.strip()
+                    if not text:
+                        continue
+
                     print(f"Received from client: {text}")
 
                     parts = text.split()
@@ -484,6 +515,7 @@ def main():
                         server_socket.close()
                         print("Server shutdown complete")
                         sys.exit(0)
+
 
             except Exception as e:
                 print(f"Error handling client: {e}")
