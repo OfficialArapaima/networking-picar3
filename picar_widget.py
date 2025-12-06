@@ -17,15 +17,14 @@ serverPort = 12000
 clientSocket = socket(AF_INET, SOCK_STREAM)
 clientSocket.connect((serverName, serverPort))
 
-# Buffered receive state for line-based protocol
-recv_buffer = b""
-
+recv_buffer = b""  # global above
 
 def recv_line(sock):
     """
     Read a single newline-terminated line from the server.
-    Returns the decoded line without the newline.
-    Returns '' if the connection is closed.
+    Returns:
+        - str (possibly empty) when a line is received
+        - None only when the socket is actually closed
     """
     global recv_buffer
 
@@ -36,13 +35,15 @@ def recv_line(sock):
 
         chunk = sock.recv(1024)
         if not chunk:
-            # Connection closed
-            return ""
+            # Real connection close
+            return None
         recv_buffer += chunk
 
+
 welcome = recv_line(clientSocket)
-if welcome:
+if welcome is not None and welcome.strip():
     print("From Server:", welcome)
+
 
 
 # Keys physically available on the UI / keyboard
@@ -248,10 +249,17 @@ class KeyboardControl(QWidget):
 
         # Read exactly one line as the response
         response = recv_line(clientSocket)
-        if response:
-            print("From Server:", response)
-        else:
+
+        if response is None:
+            # Real connection close
             print("From Server: <connection closed>")
+            return
+
+        # If the server sends an empty line (e.g., for pure movement),
+        # we just don't print anything.
+        if response.strip():
+            print("From Server:", response)
+
 
     # ---------- button slots ----------
 
