@@ -13,11 +13,10 @@ import threading
 SERVER_PORT = 12000
 
 # Detection state
-face_detect_on = False
-color_detect_on = False
-qr_detect_on = False
-current_color_idx = 0
 color_list = ['red', 'orange', 'yellow', 'green', 'blue', 'purple']
+current_color_idx = 0
+detection_running = False
+face_detection_on = True
 
 # Camera state
 camera_started = False
@@ -33,8 +32,8 @@ px = None
 
 
 def initialize_camera():
-    """Start camera with web streaming"""
-    global camera_started
+    """Start camera with web streaming and enable all detection"""
+    global camera_started, detection_running
     if not camera_started:
         try:
             print("Initializing camera...")
@@ -46,6 +45,18 @@ def initialize_camera():
             camera_started = True
             print("Camera started successfully!")
             print("  http:0.0.0.0:9000/mjpg")
+            
+            # Auto-start face detection
+            print("Enabling face detection...")
+            Vilib.face_detect_switch(True)
+            
+            # Auto-start all-color detection loop
+            print("Enabling color detection (all colors)...")
+            if not detection_running:
+                detection_running = True
+                thread = threading.Thread(target=color_detection_loop, daemon=True)
+                thread.start()
+            
         except Exception as e:
             print(f"Camera error: {e}")
             camera_started = False
@@ -78,91 +89,61 @@ def take_photo():
     return full_path
 
 
-def toggle_face_detect():
+def color_detection_loop():
+    """Background thread that cycles through all colors for detection"""
+    global detection_running, current_color_idx
+    
+    while detection_running:
+        for i, color in enumerate(color_list):
+            if not detection_running:
+                break
+            
+            current_color_idx = i
+            Vilib.color_detect(color)
+            
+            # Check for detection - if found, stay on this color longer
+            sleep(0.08)
+            n = Vilib.detect_obj_parameter.get('color_n', 0)
+            if n > 0:
+                # Color detected - stay on it a bit longer
+                sleep(0.15)
+            else:
+                sleep(0.02)
+
+
+def toggle_face_detection():
     """Toggle face detection on/off"""
-    global face_detect_on, color_detect_on, qr_detect_on
+    global face_detection_on
     
-    initialize_camera()
+    face_detection_on = not face_detection_on
+    Vilib.face_detect_switch(face_detection_on)
     
-    # Turn off other modes
-    if color_detect_on:
-        Vilib.color_detect('close')
-        color_detect_on = False
-    if qr_detect_on:
-        Vilib.qrcode_detect_switch(False)
-        qr_detect_on = False
-    
-    face_detect_on = not face_detect_on
-    Vilib.face_detect_switch(face_detect_on)
-    
-    status = "ON" if face_detect_on else "OFF"
+    status = "ON" if face_detection_on else "OFF"
     msg = f"Face detection: {status}"
     print(msg)
     return msg
 
 
-def toggle_color_detect():
-    """Toggle color detection and cycle through colors"""
-    global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
+def toggle_all_detection():
+    """Toggle all detection (face + color) on/off"""
+    global detection_running, face_detection_on
     
-    initialize_camera()
-    
-    # Turn off other modes
-    if face_detect_on:
+    if detection_running or face_detection_on:
+        # Turn everything off
+        detection_running = False
+        face_detection_on = False
         Vilib.face_detect_switch(False)
-        face_detect_on = False
-    if qr_detect_on:
-        Vilib.qrcode_detect_switch(False)
-        qr_detect_on = False
-    
-    if color_detect_on:
-        # Cycle to next color
-        current_color_idx = (current_color_idx + 1) % len(color_list)
-        if current_color_idx == 0:
-            # Cycled through all - turn off
-            Vilib.color_detect('close')
-            color_detect_on = False
-            msg = "Color detection: OFF"
-        else:
-            color = color_list[current_color_idx]
-            Vilib.color_detect(color)
-            msg = f"Color detection: {color}"
-    else:
-        # Turn on with first color
-        current_color_idx = 0
-        color = color_list[current_color_idx]
-        Vilib.color_detect(color)
-        color_detect_on = True
-        msg = f"Color detection: {color}"
-    
-    print(msg)
-    return msg
-
-
-def set_color_detect(color_num):
-    """Set specific color detection (1-6)"""
-    global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
-    
-    initialize_camera()
-    
-    # Turn off other modes
-    if face_detect_on:
-        Vilib.face_detect_switch(False)
-        face_detect_on = False
-    if qr_detect_on:
-        Vilib.qrcode_detect_switch(False)
-        qr_detect_on = False
-    
-    if color_num == 0:
         Vilib.color_detect('close')
-        color_detect_on = False
-        msg = "Color detection: OFF"
+        sleep(0.1)
+        msg = "All detection: OFF"
     else:
-        current_color_idx = color_num - 1
-        color = color_list[current_color_idx]
-        Vilib.color_detect(color)
-        color_detect_on = True
-        msg = f"Color detection: {color}"
+        # Turn everything on
+        face_detection_on = True
+        Vilib.face_detect_switch(True)
+        detection_running = True
+        thread = threading.Thread(target=color_detection_loop, daemon=True)
+        thread.start()
+        msg = "All detection: ON (face + all colors)"
     
     print(msg)
     return msg
@@ -174,33 +155,32 @@ def get_detection_info():
     """Get current detection information"""
     info_parts = []
     
-    if face_detect_on:
-        n = Vilib.detect_obj_parameter['human_n']
+    # Face detection info
+    if face_detection_on:
+        n = Vilib.detect_obj_parameter.get('human_n', 0)
         if n > 0:
-            x = Vilib.detect_obj_parameter['human_x']
-            y = Vilib.detect_obj_parameter['human_y']
-            info_parts.append(f"Faces: {n} at ({x},{y})")
+            x = Vilib.detect_obj_parameter.get('human_x', 0)
+            y = Vilib.detect_obj_parameter.get('human_y', 0)
+            w = Vilib.detect_obj_parameter.get('human_w', 0)
+            h = Vilib.detect_obj_parameter.get('human_h', 0)
+            info_parts.append(f"Faces: {n} at ({x},{y}) size:{w}x{h}")
         else:
             info_parts.append("Faces: none")
+    else:
+        info_parts.append("Faces: OFF")
     
-    if color_detect_on:
-        n = Vilib.detect_obj_parameter['color_n']
+    # Color detection info
+    if detection_running:
+        n = Vilib.detect_obj_parameter.get('color_n', 0)
         if n > 0:
-            x = Vilib.detect_obj_parameter['color_x']
-            y = Vilib.detect_obj_parameter['color_y']
-            info_parts.append(f"Color: found at ({x},{y})")
+            x = Vilib.detect_obj_parameter.get('color_x', 0)
+            y = Vilib.detect_obj_parameter.get('color_y', 0)
+            current_color = color_list[current_color_idx] if current_color_idx < len(color_list) else "unknown"
+            info_parts.append(f"Color({current_color}): at ({x},{y})")
         else:
             info_parts.append("Color: none")
-    
-    if qr_detect_on:
-        qr_data = Vilib.detect_obj_parameter['qr_data']
-        if qr_data and qr_data != "None":
-            info_parts.append(f"QR: {qr_data}")
-        else:
-            info_parts.append("QR: none")
-    
-    if not info_parts:
-        return "No detection mode active"
+    else:
+        info_parts.append("Color: OFF")
     
     return " | ".join(info_parts)
 
@@ -271,15 +251,12 @@ def handle_command(cmd):
         px.set_cam_pan_angle(pan_angle)
         response = f"Pan: {pan_angle}"
     
-    # Detection modes
+    # Detection toggles
     elif cmd == 'f':
-        response = toggle_face_detect()
-        
-    elif cmd == 'c':
-        response = toggle_color_detect()
-        
-    elif cmd in '0123456':
-        response = set_color_detect(int(cmd))       
+        response = toggle_face_detection()
+    
+    elif cmd == 'o':
+        response = toggle_all_detection()
     
     # Info/utility
     elif cmd == 'n':
@@ -290,7 +267,7 @@ def handle_command(cmd):
         response = f"Photo saved: {path}"
     
     elif cmd == 'h':
-        response = "Commands: wasd=move, x=stop, +-=speed, ijkl=cam, f=face, c=color, r=qr, p=photo, n=info, q=quit"
+        response = "Commands: wasd=move, x=stop, +-=speed, ijkl=cam, f=face, o=all detect, p=photo, n=info, q=quit"
     
     elif cmd == 'q':
         response = "Shutting down..."
@@ -305,9 +282,20 @@ def handle_command(cmd):
 
 def cleanup():
     """Clean up resources"""
-    global px, camera_started
+    global px, camera_started, detection_running, face_detection_on
     
     print("\nCleaning up...")
+    
+    # Stop detection thread
+    detection_running = False
+    face_detection_on = False
+    
+    # Turn off detection features
+    try:
+        Vilib.face_detect_switch(False)
+        Vilib.color_detect('close')
+    except:
+        pass
     
     if px:
         px.set_cam_tilt_angle(0)
@@ -341,12 +329,9 @@ def main():
     px.set_cam_tilt_angle(0)
     px.set_cam_pan_angle(0)
     
-    # Start camera immediately so user can view it
-    print("Starting camera...")
+    # Start camera with auto-enabled face + color detection
+    print("Starting camera with detection...")
     initialize_camera()
-
-    toggle_face_detect()
-    toggle_color_detect()
     
     # Get IP address for display
     ip_addr = get_ip_address()

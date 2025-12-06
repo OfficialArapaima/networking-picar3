@@ -1,9 +1,8 @@
-# Server requirements (Raspberry Pi)
-opencv-python>=4.5.0
-numpy>=1.19.0
-
-# Client requirements
+# Client requirements (Mac/laptop)
 readchar>=3.0.0
 
-# Note: picarx library should be pre-installed on the PiCar-X hardware
-
+# Server requirements (Raspberry Pi)
+# picarx and vilib are pre-installed on PiCar-X hardware
+# Install via Sunfounder's setup scripts if missing:
+#   git clone https://github.com/sunfounder/picar-x.git && cd picar-x && sudo python3 setup.py install
+#   git clone https://github.com/sunfounder/vilib.git && cd vilib && sudo python3 install.py

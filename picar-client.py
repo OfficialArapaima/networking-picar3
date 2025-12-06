@@ -18,19 +18,16 @@ MANUAL = '''
 ║    d : Turn right        l : Pan right                       ║
 ║    x : Stop                                                  ║
 ║                                                              ║
-║  SPEED                 DETECTION MODES                       ║
+║  SPEED                 DETECTION                             ║
 ║    + : Speed up          f : Toggle face detection           ║
-║    - : Speed down        c : Cycle color detection           ║
-║                          r : Toggle QR detection             ║
-║                        0-6 : Color select (0=off, 1-6=color) ║
+║    - : Speed down        o : Toggle all detection on/off     ║
 ║                                                              ║
 ║  UTILITY                                                     ║
-║    p : Take photo (saved on Pi)                              ║
+║    p : Take photo        n : Show detection info             ║
 ║    q : Quit                                                  ║
 ║                                                              ║
-║                                                              ║
-║                                                              ║
-║  Camera view: http:0.0.0.0:9000/mjpg                         ║
+║  Detection starts automatically (face + all colors)          ║
+║  Camera view: http://<pi-ip>:9000/mjpg                       ║
 ╚══════════════════════════════════════════════════════════════╝
 '''
 
@@ -97,7 +94,7 @@ def main():
     # Show controls
     print(MANUAL)
     
-    valid_commands = 'wasxdikjl+-=_fcr0123456pnhq'
+    valid_commands = 'wasxdikjl+-=_fopnhq'
     
     try:
         while running:
