@@ -150,6 +150,124 @@ def take_photo():
     except Exception as PhotoError:
         return f"Photo path error occured. Error: {PhotoError}"
 
+
+"""
+Toggles face detection on/off
+
+Returns:
+    The status of if face detection is on or off or the error that occured.
+
+Raises:
+    FaceToggleError: Raises and exception if there is an error with toggling the face detection.
+"""
+
+def toggle_face_detect():
+    """Toggle face detection on/off"""
+    global face_detection_on
+    
+    face_detection_on = not face_detection_on
+    Vilib.face_detect_switch(face_detection_on)
+    
+    status = "ON" if face_detection_on else "OFF"
+    msg = f"Face detection: {status}"
+    print(msg)
+    return msg
+# def toggle_face_detect():
+#     global face_detect_on, color_detect_on, qr_detect_on
+
+#     # Tries to initialize the camera if it isn't already
+#     initialize_camera()
+
+#     try:
+#         # Turn off other modes
+#         if color_detect_on:
+#             Vilib.color_detect('close')
+#             color_detect_on = False
+#         if qr_detect_on:
+#             Vilib.qrcode_detect_switch(False)
+#             qr_detect_on = False
+
+#         face_detect_on = not face_detect_on
+#         Vilib.face_detect_switch(face_detect_on)
+
+#         status = "ON" if face_detect_on else "OFF"
+#         msg = f"Face detection: {status}"
+#         print(msg)
+#         return msg
+#     except Exception as FaceToggleError:
+#         return f'Error with face detection. Error: {FaceToggleError}'
+
+"""
+Toggle color detection and cycle through available colors
+
+Returns:
+    The current color that it is looking for or the error that occured.
+
+Raises:
+    ToggleColorError: Raises an exception if there is an error with toggling the color detection.
+"""
+
+def toggle_color_detect():
+    """Background thread that cycles through all colors for detection"""
+    global detection_running, current_color_idx
+    
+    while detection_running:
+        for i, color in enumerate(color_list):
+            if not detection_running:
+                break
+            
+            current_color_idx = i
+            Vilib.color_detect(color)
+            
+            # Check for detection - if found, stay on this color longer
+            sleep(0.08)
+            n = Vilib.detect_obj_parameter.get('color_n', 0)
+            if n > 0:
+                # Color detected - stay on it a bit longer
+                sleep(0.15)
+            else:
+                sleep(0.02)
+# def toggle_color_detect():
+#     global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
+
+#     # Tries to initialize the camera if it isn't already
+#     initialize_camera()
+
+#     try:
+#         # Turn off other modes
+#         if face_detect_on:
+#             Vilib.face_detect_switch(False)
+#             face_detect_on = False
+#         if qr_detect_on:
+#             Vilib.qrcode_detect_switch(False)
+#             qr_detect_on = False
+
+#         if color_detect_on:
+#             # Cycle to next color
+#             current_color_idx = (current_color_idx + 1) % len(color_list)
+#             if current_color_idx == 0:
+#                 # Cycled through all - turn off
+#                 Vilib.color_detect('close')
+#                 color_detect_on = False
+#                 msg = "Color detection: OFF"
+#             else:
+#                 color = color_list[current_color_idx]
+#                 Vilib.color_detect(color)
+#                 msg = f"Color detection: {color}"
+#         else:
+#             # Turn on with first color
+#             current_color_idx = 0
+#             color = color_list[current_color_idx]
+#             Vilib.color_detect(color)
+#             color_detect_on = True
+#             msg = f"Color detection: {color}"
+
+#         print(msg)
+#         return msg
+#     except Exception as ToggleColorError:
+#         return f'Error with color detection. Error: {ToggleColorError}'
+
+
 def get_detection_info():
     """Get current detection information"""
     info_parts = []
