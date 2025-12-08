@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import random
 import sys
 import os
 from socket import *
@@ -17,6 +18,15 @@ face_detect_on = False
 color_detect_on = False
 detection_running = False
 face_detection_on = True
+avoidance_enabled = False
+
+# Obstacle Avoidance settings 
+power = 60
+safe_distance = 45
+warn_distance = 25
+stop_distance = 15
+turn_angle = 30
+turn_time = 1.0
 
 current_color_idx = 0
 color_list = ['red', 'orange', 'yellow', 'green', 'blue', 'purple']
@@ -321,6 +331,64 @@ Returns:
 def clamp(value, min_val, max_val):
     return max(min_val, min(max_val, value))
 
+def simple_avoidance():
+    """
+    Very simple obstacle avoidance loop.
+
+    When avoidance_enabled is True, this loop will:
+      - Drive forward when the path is clear.
+      - Slow/turn when something gets close.
+      - Stop and back up if something is very close.
+
+    It runs continuously while `running` is True, so it is meant to be
+    started in a background thread, similar to steering_loop().
+    """
+    global avoidance_enabled, px, running
+
+    while running:
+        # If avoidance is disabled or the car isn't ready, just idle
+        if not avoidance_enabled or px is None:
+            sleep(0.05)
+            continue
+
+        # Read ultrasonic distance
+        distance = round(px.ultrasonic.read(), 2)
+
+        if distance >= safe_distance:
+            # Clear path - go straight
+            px.set_dir_servo_angle(0)
+            px.forward(power)
+
+        elif distance > warn_distance:
+            # Something ahead but not too close - start a gentle turn
+            turn_direction = random.choice([-1, 1])
+            px.set_dir_servo_angle(turn_direction * (turn_angle / 2))
+            px.forward(power)
+            sleep(0.1)
+
+        elif distance >= stop_distance:
+            # Close - stop, then make a sharper turn and move forward
+            px.forward(0)
+            sleep(0.1)
+            turn_direction = random.choice([-1, 1])
+            px.set_dir_servo_angle(turn_direction * turn_angle)
+            px.forward(power)
+            sleep(turn_time)
+            px.set_dir_servo_angle(0)
+            px.forward(0)
+
+        else:
+            # Very close - back up and slightly turn away
+            px.forward(0)
+            sleep(0.1)
+            px.set_dir_servo_angle(-10)
+            px.backward(power)
+            sleep(0.8)
+            px.set_dir_servo_angle(0)
+            px.forward(0)
+
+        sleep(0.05)
+
 
 """
 A background loop to smoothly move steering towards target_angle without slowing the response time.
@@ -508,6 +576,11 @@ def main():
     # Start steering thread
     steer_thread = threading.Thread(target=steering_loop, daemon=True)
     steer_thread.start()
+
+    # Start simple obstacle avoidance thread (initially disabled)
+    avoid_thread = threading.Thread(target=simple_avoidance, daemon=True)
+    avoid_thread.start()
+
 
     # Get IP address for display
     ip_addr = get_ip_address()
