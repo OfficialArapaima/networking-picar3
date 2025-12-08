@@ -368,12 +368,12 @@ def handle_command(action, command):
 
     # ---------- Speed control ----------
     if command == "speed_increase":
-        if action == "stop":
+        if action == "start":
             current_speed = clamp(current_speed + 10, 0, 100)
             response = f"Speed increased to {current_speed}"
 
     elif command == "speed_decrease":
-        if action == "stop":
+        if action == "start":
             current_speed = clamp(current_speed - 10, 0, 100)
             response = f"Speed decreased to {current_speed}"
 
@@ -412,24 +412,24 @@ def handle_command(action, command):
 
     # ---------- Detection / camera features ----------
     elif command == "toggle_face":
-        if action == "stop":
+        if action == "start":
             response = toggle_face_detect()
 
     elif command == "toggle_color":
-        if action == "stop":
+        if action == "start":
             response = toggle_color_detect()
 
     elif command == "take_photo":
-        if action == "stop":
+        if action == "start":
             path = take_photo()
             response = f"Photo saved: {path}"
 
     elif command == "show_detect":
-        if action == "stop":
+        if action == "start":
             response = get_detection_info()
 
     elif command == "help":
-        if action == "stop":
+        if action == "start":
             response = (
                 "Commands: forward/backward/left/right, "
                 "speed_increase/speed_decrease, "

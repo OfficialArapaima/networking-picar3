@@ -29,7 +29,7 @@ def recv_line(sock):
     global recv_buffer
 
     while True:
-        if b"" in recv_buffer:
+        if b"\n" in recv_buffer:
             line, recv_buffer = recv_buffer.split(b"\n", 1)
             return line.decode(errors="ignore").rstrip("\r")
 
@@ -41,9 +41,8 @@ def recv_line(sock):
 
 
 welcome = recv_line(clientSocket)
-if welcome is not None and welcome.strip():
+if welcome:
     print("From Server:", welcome)
-
 
 
 # Keys physically available on the UI / keyboard
@@ -251,11 +250,13 @@ class KeyboardControl(QWidget):
         response = recv_line(clientSocket)
 
         if response is None:
+            # Real connection close
+            print("From Server: <connection closed>")
             return
 
         # If the server sends an empty line (e.g., for pure movement),
         # we just don't print anything.
-        if response:
+        if response.strip():
             print("From Server:", response)
 
 
