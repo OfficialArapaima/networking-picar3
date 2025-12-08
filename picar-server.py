@@ -116,6 +116,11 @@ def send_response(msg):
     except Exception as SendError:
         print(f"Error sending response: {SendError}")
 
+def send_multiline(msg: str):
+    for line in msg.split("\n"):
+        send_response(line)  # your existing one-line sender
+    send_response("<END>")
+
 
 """
 Takes and saves a photo locally on the Pi
@@ -430,7 +435,15 @@ def handle_command(action, command):
 
     elif command == "help":
         if action == "start":
-            response = "MOVEMENT              CAMERA HEAD\nw : Forward           i : Tilt up\ns : Backward          k : Tilt down\na : Turn left         j : Pan left\nd : Turn right        l : Pan right\nUTILITY\np : Take photo        n : Show detection info\nq : Quit"
+            response = """MOVEMENT              CAMERA HEAD
+            w : Forward           i : Tilt up
+            s : Backward          k : Tilt down
+            a : Turn left         j : Pan left
+            d : Turn right        l : Pan right
+            UTILITY
+            p : Take photo        n : Show detection info
+            q : Quit"""
+
 
     # ---------- Optional quit ----------
     elif command in ("quit", "q"):
@@ -546,7 +559,7 @@ def main():
 
                     response, should_quit = handle_command(action, command)
                     drive_loop(text)
-                    send_response(response)
+                    send_multiline(response)
 
                     if should_quit:
                         cleanup()

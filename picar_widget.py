@@ -39,6 +39,17 @@ def recv_line(sock):
             return None
         recv_buffer += chunk
 
+def recv_multiline(sock):
+    lines = []
+    while True:
+        line = recv_line(sock)
+        if line is None:
+            return None
+        if line == "<END>":
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
 
 welcome = recv_line(clientSocket)
 if welcome:
@@ -240,18 +251,18 @@ class KeyboardControl(QWidget):
         msg = f"{action} {command}\n"
         clientSocket.sendall(msg.encode())
 
-        # Read exactly one line as the response
-        response = recv_line(clientSocket)
+        # Read multiline response block (<END> terminated)
+        response = recv_multiline(clientSocket)
 
         if response is None:
-            # Real connection close
             print("From Server: <connection closed>")
             return
 
-        # If the server sends an empty line (e.g., for pure movement),
-        # we just don't print anything.
+        # Print the full block only if it's not empty
         if response.strip():
-            print("From Server:", response)
+            print("From Server:")
+            print(response)
+
 
 
     # ---------- button slots ----------
