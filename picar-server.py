@@ -21,7 +21,7 @@ is_moving_forward = False
 
 # Obstacle Avoidance settings
 power = 60
-safe_distance = 8
+safe_distance = 16
 warn_distance = 25
 stop_distance = 15
 turn_angle = 30
