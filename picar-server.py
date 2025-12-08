@@ -333,62 +333,49 @@ def clamp(value, min_val, max_val):
 
 def simple_avoidance():
     """
-    Very simple obstacle avoidance loop.
+    Simple forward collision avoidance.
 
-    When avoidance_enabled is True, this loop will:
-      - Drive forward when the path is clear.
-      - Slow/turn when something gets close.
-      - Stop and back up if something is very close.
+    This runs in the background while `running` is True.
+    It does NOT try to drive the car on its own. Instead, it:
+      - Continuously reads the ultrasonic sensor.
+      - If an object is within `safe_distance` in front of the car,
+        it sends a "brake" command by calling px.forward(0),
+        which stops the motors regardless of current speed.
 
-    It runs continuously while `running` is True, so it is meant to be
-    started in a background thread, similar to steering_loop().
+    This way, you can still drive normally with your existing controls,
+    and this loop will only step in to stop you from hitting
+    something head-on.
     """
-    global avoidance_enabled, px, running
+    global px, running
 
     while running:
-        # If avoidance is disabled or the car isn't ready, just idle
-        if not avoidance_enabled or px is None:
-            sleep(0.05)
+        # If the car isn't initialized yet, just wait
+        if px is None:
+            sleep(0.1)
             continue
 
-        # Read ultrasonic distance
-        distance = round(px.ultrasonic.read(), 2)
-
-        if distance >= safe_distance:
-            # Clear path - go straight
-            px.set_dir_servo_angle(0)
-            px.forward(power)
-
-        elif distance > warn_distance:
-            # Something ahead but not too close - start a gentle turn
-            turn_direction = random.choice([-1, 1])
-            px.set_dir_servo_angle(turn_direction * (turn_angle / 2))
-            px.forward(power)
+        try:
+            distance = px.ultrasonic.read()
+        except Exception:
+            # Sensor read failed; try again shortly
             sleep(0.1)
+            continue
 
-        elif distance >= stop_distance:
-            # Close - stop, then make a sharper turn and move forward
-            px.forward(0)
-            sleep(0.1)
-            turn_direction = random.choice([-1, 1])
-            px.set_dir_servo_angle(turn_direction * turn_angle)
-            px.forward(power)
-            sleep(turn_time)
-            px.set_dir_servo_angle(0)
-            px.forward(0)
+        # Make sure distance is a sane number
+        if distance is not None:
+            try:
+                distance = float(distance)
+            except (TypeError, ValueError):
+                distance = None
 
-        else:
-            # Very close - back up and slightly turn away
-            px.forward(0)
-            sleep(0.1)
-            px.set_dir_servo_angle(-10)
-            px.backward(power)
-            sleep(0.8)
-            px.set_dir_servo_angle(0)
-            px.forward(0)
+        if distance is not None and distance > 0:
+            # If we're too close to something in front, hit the brakes.
+            # You can still choose to back up with your normal controls.
+            if distance <= safe_distance:
+                px.forward(0)
 
+        # Don't hammer the CPU
         sleep(0.05)
-
 
 """
 A background loop to smoothly move steering towards target_angle without slowing the response time.
@@ -577,9 +564,10 @@ def main():
     steer_thread = threading.Thread(target=steering_loop, daemon=True)
     steer_thread.start()
 
-    # Start simple obstacle avoidance thread (initially disabled)
+    # Start simple obstacle avoidance thread
     avoid_thread = threading.Thread(target=simple_avoidance, daemon=True)
     avoid_thread.start()
+
 
 
     # Get IP address for display
