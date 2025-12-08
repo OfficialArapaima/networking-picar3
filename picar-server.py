@@ -379,13 +379,13 @@ def drive_loop(data):
     Args:
         data: A command string such as 'start forward', 'stop backward', etc.
     """
-    global target_angle, running, px, connection_socket, is_moving_forward
+    global target_angle, running, px, connection_socket, is_moving_forward, current_speed
     match data:
         case 'start forward':
-            px.forward(80)
+            px.forward(current_speed)
             is_moving_forward = True
         case 'start backward':
-            px.backward(80)
+            px.backward(current_speed)
             is_moving_forward = False
         case 'start left':
             target_angle = -30
