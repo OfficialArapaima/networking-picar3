@@ -430,17 +430,7 @@ def handle_command(action, command):
 
     elif command == "help":
         if action == "start":
-            response = (
-                "MOVEMENT              CAMERA HEAD\n",                        
-                "w : Forward           i : Tilt up\n",                         
-                "s : Backward          k : Tilt down\n",                       
-                "a : Turn left         j : Pan left\n",                        
-                "d : Turn right        l : Pan right\n",
-
-                "UTILITY\n",
-                "p : Take photo        n : Show detection info\n",             
-                "q : Quit"                                                  
-            )
+            response = "MOVEMENT              CAMERA HEAD\nw : Forward           i : Tilt up\ns : Backward          k : Tilt down\na : Turn left         j : Pan left\nd : Turn right        l : Pan right\nUTILITY\np : Take photo        n : Show detection info\nq : Quit"
 
     # ---------- Optional quit ----------
     elif command in ("quit", "q"):
