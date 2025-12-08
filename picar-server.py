@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import random
 import sys
 import os
@@ -21,7 +19,7 @@ face_detection_on = True
 avoidance_enabled = False
 is_moving_forward = False
 
-# Obstacle Avoidance settings 
+# Obstacle Avoidance settings
 power = 60
 safe_distance = 8
 warn_distance = 25
@@ -48,55 +46,66 @@ running = True
 # Connection
 connection_socket = None
 px = None
+recv_buffer = b""
+
 
 def recv_line(sock):
-    """
-    Read a single newline-terminated line from the client.
+    """Read a single newline-terminated line from the client.
+
+    The function appends incoming data into a global buffer until a newline
+    character is found, at which point it returns the decoded line without
+    the trailing newline.
+
+    Args:
+        sock: The socket to read data from.
+
     Returns:
-        The decoded line (without the trailing newline) or
+        The decoded line (without the trailing newline) as a string, or
         None if the connection is closed.
     """
     global recv_buffer
 
     while True:
-        # Do we already have a full line in the buffer?
+        # If we already have a full line buffered, split and return it.
         if b"\n" in recv_buffer:
             line, recv_buffer = recv_buffer.split(b"\n", 1)
             return line.decode(errors="ignore").rstrip("\r")
 
-        # Otherwise, read more data
+        # Otherwise, read more data from the socket.
         chunk = sock.recv(1024)
         if not chunk:
-            # Connection closed
+            # Connection closed by the client.
             return None
         recv_buffer += chunk
 
-"""
-Start the camera with web streaming.
 
-Raises:
-    CameraError: Raises an error that the camera didn't initialize correctly.
-"""
 def initialize_camera():
-    """Start camera with web streaming and enable all detection"""
+    """Start the camera with web streaming and enable all detection.
+
+    Starts the Vilib camera, brings up the web stream, and automatically
+    turns on face detection plus a background color-detection loop.
+
+    Raises:
+        CameraError: If the camera fails to initialize correctly.
+    """
     global camera_started, detection_running
     if not camera_started:
         try:
             print("Initializing camera...")
             Vilib.camera_start(vflip=False, hflip=False)
             sleep(0.5)
-            # web=True enables Flask web server, local=False for headless operation
+            # web=True enables Flask web server, local=False for headless operation.
             Vilib.display(local=False, web=True)
-            sleep(1)  # Give camera time to start
+            sleep(1)  # Give camera time to start.
             camera_started = True
             print("Camera started successfully!")
             print("  http:0.0.0.0:9000/mjpg")
-            
-            # Auto-start face detection
+
+            # Auto-start face detection.
             print("Enabling face detection...")
             Vilib.face_detect_switch(True)
-            
-            # Auto-start all-color detection loop
+
+            # Auto-start all-color detection loop in a background thread.
             print("Enabling color detection (all colors)...")
             if not detection_running:
                 detection_running = True
@@ -107,58 +116,73 @@ def initialize_camera():
             camera_started = False
 
 
-"""
-Sends a text response to the client.
-
-Args:
-    msg: The message to be returned to the client.
-
-Raises:
-    SendError: Exception raised when trying to send back to client.
-"""
 def send_response(msg):
+    """Send a text response to the client.
+
+    Ensures that each response is newline-terminated before sending.
+
+    Args:
+        msg: The message to be returned to the client as a string.
+
+    Raises:
+        SendError: If an error occurs when sending data back to the client.
+    """
     global connection_socket
     try:
         if connection_socket:
-            # Ensure every response is newline-terminated
+            # Ensure every response is newline-terminated.
             if not msg.endswith("\n"):
                 msg = msg + "\n"
             connection_socket.sendall(msg.encode())
     except Exception as SendError:
         print(f"Error sending response: {SendError}")
 
+
 def send_multiline(msg: str):
+    """Send a potentially multi-line message to the client.
+
+    Splits the message on newline characters, sends each line individually,
+    and then sends a sentinel "<END>" line to mark completion.
+
+    Args:
+        msg: The message to be sent, possibly containing newlines.
+    """
     for line in msg.split("\n"):
-        send_response(line)  # your existing one-line sender
+        # Use the existing single-line sender for each individual line.
+        send_response(line)
+    # Send an end marker so the client knows the message is complete.
     send_response("<END>")
 
 
-"""
-Takes and saves a photo locally on the Pi
-
-Returns:
-    The full path of where the photo gets saved to.
-
-Raises:
-    PhotoError: Raises an exception if there was an issue taking the photo.
-"""
 def take_photo():
-    # Tries to initialize the camera if it isn't already
+    """Take and save a photo locally on the Pi.
+
+    Initializes the camera if necessary, then captures an image and saves it
+    to the current user's Pictures directory using a timestamp-based filename.
+
+    Returns:
+        The full path of where the photo is saved if successful, or a string
+        describing the error if it fails.
+
+    Raises:
+        PhotoError: If there is an issue taking or saving the photo.
+    """
+    # Try to initialize the camera if it isn't already.
     initialize_camera()
 
-    # Sets the specific time the photo was taken
     try:
+        # Create a timestamp to uniquely identify the photo.
         _time = strftime('%Y-%m-%d-%H-%M-%S', localtime(time()))
 
-        # Names the photo based on the time and then puts it in the user's Pictures
+        # Name the photo based on the time and put it in the user's Pictures folder.
         name = f'PiCarPhoto_{_time}'
         username = os.getlogin()
         path = f"/home/{username}/Pictures/"
 
-        # Create directory if needed
+        # Create directory if needed.
         os.makedirs(path, exist_ok=True)
 
-        # Actually takes the photo
+        # Actually take the photo using Vilib.
         Vilib.take_photo(name, path)
         full_path = f"{path}{name}.jpg"
         print(f"Photo saved: {full_path}")
@@ -167,128 +191,76 @@ def take_photo():
         return f"Photo path error occured. Error: {PhotoError}"
 
 
-"""
-Toggles face detection on/off
-
-Returns:
-    The status of if face detection is on or off or the error that occured.
-
-Raises:
-    FaceToggleError: Raises and exception if there is an error with toggling the face detection.
-"""
-
 def toggle_face_detect():
-    """Toggle face detection on/off"""
+    """Toggle face detection on or off.
+
+    Flips the global face_detection_on flag and updates Vilib's face detection
+    state accordingly.
+
+    Returns:
+        A string describing whether face detection is now ON or OFF.
+
+    Raises:
+        FaceToggleError: If there is an error toggling face detection.
+    """
     global face_detection_on
-    
+
     face_detection_on = not face_detection_on
     Vilib.face_detect_switch(face_detection_on)
-    
+
     status = "ON" if face_detection_on else "OFF"
     msg = f"Face detection: {status}"
     print(msg)
     return msg
-# def toggle_face_detect():
-#     global face_detect_on, color_detect_on, qr_detect_on
 
-#     # Tries to initialize the camera if it isn't already
-#     initialize_camera()
-
-#     try:
-#         # Turn off other modes
-#         if color_detect_on:
-#             Vilib.color_detect('close')
-#             color_detect_on = False
-#         if qr_detect_on:
-#             Vilib.qrcode_detect_switch(False)
-#             qr_detect_on = False
-
-#         face_detect_on = not face_detect_on
-#         Vilib.face_detect_switch(face_detect_on)
-
-#         status = "ON" if face_detect_on else "OFF"
-#         msg = f"Face detection: {status}"
-#         print(msg)
-#         return msg
-#     except Exception as FaceToggleError:
-#         return f'Error with face detection. Error: {FaceToggleError}'
-
-"""
-Toggle color detection and cycle through available colors
-
-Returns:
-    The current color that it is looking for or the error that occured.
-
-Raises:
-    ToggleColorError: Raises an exception if there is an error with toggling the color detection.
-"""
 
 def toggle_color_detect():
-    """Background thread that cycles through all colors for detection"""
+    """Background thread that cycles through all colors for detection.
+
+    Continuously iterates through the list of colors, enabling each one in turn.
+    If a color is detected, the function briefly lingers on that color before
+    moving on, to make detection more stable.
+
+    This function is designed to run in a daemon thread while `detection_running`
+    remains True.
+
+    Raises:
+        ToggleColorError: If there is an error managing color detection.
+    """
     global detection_running, current_color_idx
-    
+
     while detection_running:
         for i, color in enumerate(color_list):
             if not detection_running:
                 break
-            
+
+            # Update the currently active color index.
             current_color_idx = i
             Vilib.color_detect(color)
-            
-            # Check for detection - if found, stay on this color longer
+
+            # Small delay to allow detection data to update.
             sleep(0.08)
             n = Vilib.detect_obj_parameter.get('color_n', 0)
             if n > 0:
-                # Color detected - stay on it a bit longer
+                # Color detected - stay on it a bit longer.
                 sleep(0.15)
             else:
+                # No detection, quickly move on to the next color.
                 sleep(0.02)
-# def toggle_color_detect():
-#     global face_detect_on, color_detect_on, qr_detect_on, current_color_idx
-
-#     # Tries to initialize the camera if it isn't already
-#     initialize_camera()
-
-#     try:
-#         # Turn off other modes
-#         if face_detect_on:
-#             Vilib.face_detect_switch(False)
-#             face_detect_on = False
-#         if qr_detect_on:
-#             Vilib.qrcode_detect_switch(False)
-#             qr_detect_on = False
-
-#         if color_detect_on:
-#             # Cycle to next color
-#             current_color_idx = (current_color_idx + 1) % len(color_list)
-#             if current_color_idx == 0:
-#                 # Cycled through all - turn off
-#                 Vilib.color_detect('close')
-#                 color_detect_on = False
-#                 msg = "Color detection: OFF"
-#             else:
-#                 color = color_list[current_color_idx]
-#                 Vilib.color_detect(color)
-#                 msg = f"Color detection: {color}"
-#         else:
-#             # Turn on with first color
-#             current_color_idx = 0
-#             color = color_list[current_color_idx]
-#             Vilib.color_detect(color)
-#             color_detect_on = True
-#             msg = f"Color detection: {color}"
-
-#         print(msg)
-#         return msg
-#     except Exception as ToggleColorError:
-#         return f'Error with color detection. Error: {ToggleColorError}'
 
 
 def get_detection_info():
-    """Get current detection information"""
+    """Get current detection information for face and color tracking.
+
+    Builds a human-readable summary of the current detection status, including
+    face count and bounding box, as well as active color detection information.
+
+    Returns:
+        A string summarizing the current detection state (faces and colors).
+    """
     info_parts = []
-    
-    # Face detection info
+
+    # Face detection info.
     if face_detection_on:
         n = Vilib.detect_obj_parameter.get('human_n', 0)
         if n > 0:
@@ -301,8 +273,8 @@ def get_detection_info():
             info_parts.append("Faces: none")
     else:
         info_parts.append("Faces: OFF")
-    
-    # Color detection info
+
+    # Color detection info.
     if detection_running:
         n = Vilib.detect_obj_parameter.get('color_n', 0)
         if n > 0:
@@ -314,48 +286,53 @@ def get_detection_info():
             info_parts.append("Color: none")
     else:
         info_parts.append("Color: OFF")
-    
+
     return " | ".join(info_parts)
 
 
-"""
-Clamps the value between a min and a max number so that it doesn't exceed a max or fall below the min
-
-Args:
-    value: Value that is trying to be set
-    min_val: The minimum value allowed
-    max_val: The maximum value allowed
-
-Returns:
-    Either the value you are trying to set or the min/max if you go over either one
-"""
 def clamp(value, min_val, max_val):
+    """Clamp a numeric value between a minimum and maximum.
+
+    Args:
+        value: The value that is trying to be set.
+        min_val: The minimum value allowed.
+        max_val: The maximum value allowed.
+
+    Returns:
+        The clamped value, which will be within [min_val, max_val].
+    """
     return max(min_val, min(max_val, value))
 
-def simple_avoidance():
-    """
-    Forward collision avoidance that only intervenes
-    when the car is moving forward.
 
-    - Reads the ultrasonic distance.
-    - If an object is within `safe_distance` and the car
-      is moving forward, it stops the motors.
+def simple_avoidance():
+    """Forward collision avoidance loop.
+
+    This function runs in a background thread and only intervenes when the
+    car is moving forward:
+
+    - Reads the ultrasonic distance sensor.
+    - If an object is within `safe_distance` and the car is moving forward,
+      it stops the motors.
     - It does NOT interfere with backing up.
+
+    Uses the global `is_moving_forward` flag to know when intervention is needed.
     """
     global px, running, is_moving_forward
 
     while running:
         if px is None:
+            # No car instance yet; wait and check again.
             sleep(0.1)
             continue
 
         try:
             distance = px.ultrasonic.read()
         except Exception:
+            # If the ultrasonic read fails, skip this cycle.
             sleep(0.1)
             continue
 
-        # Convert to a usable float if possible
+        # Convert to a usable float if possible.
         if distance is not None:
             try:
                 distance = float(distance)
@@ -368,16 +345,19 @@ def simple_avoidance():
             and distance <= safe_distance
             and is_moving_forward
         ):
-            # Only stop if we were actually going forward
+            # Only stop if we were actually going forward.
             px.forward(0)
-            is_moving_forward = False  # we've just stopped
+            is_moving_forward = False  # We've just stopped due to an obstacle.
 
         sleep(0.05)
 
-"""
-A background loop to smoothly move steering towards target_angle without slowing the response time.
-"""
+
 def steering_loop():
+    """Background loop to smoothly move steering towards target_angle.
+
+    Gradually adjusts current_angle toward target_angle in small increments
+    so that steering changes feel smooth and responsive instead of jerky.
+    """
     global current_angle, target_angle, running, px
     while running:
         if current_angle < target_angle:
@@ -385,13 +365,20 @@ def steering_loop():
         elif current_angle > target_angle:
             current_angle -= 0.5
 
+        # Apply the updated steering angle to the servo.
         px.set_dir_servo_angle(current_angle)
         sleep(0.001)
 
-"""
-Loop that the car should use to handle the actual driving part. 
-"""
+
 def drive_loop(data):
+    """Handle the low-level driving commands for the car.
+
+    This function adjusts motor direction, speed, and steering target based
+    on single-string commands like 'start forward' or 'stop left'.
+
+    Args:
+        data: A command string such as 'start forward', 'stop backward', etc.
+    """
     global target_angle, running, px, connection_socket, is_moving_forward
     match data:
         case 'start forward':
@@ -415,12 +402,28 @@ def drive_loop(data):
         case 'stop right':
             target_angle = 0
 
-"""
-Process a command from the client: action=start/stop, command=name.
-"""
-def handle_command(action, command):
-    global current_speed, pan_angle, tilt_angle, px, target_angle
 
+def handle_command(action, command):
+    """Process a high-level command from the client.
+
+    Commands are split into an action (e.g., "start", "stop") and a command
+    name (e.g., "cam_up", "speed_increase"). This function handles:
+    - Speed control
+    - Camera pan/tilt
+    - Detection/camera features
+    - Help text
+    - Optional quit/shutdown
+
+    Args:
+        action: The action part of the command, usually "start" or "stop".
+        command: The command name (e.g., "cam_up", "take_photo", "toggle_face").
+
+    Returns:
+        A tuple (response, should_quit) where:
+            response: A string to be sent back to the client.
+            should_quit: True if the server should shut down, False otherwise.
+    """
+    global current_speed, pan_angle, tilt_angle, px, target_angle
 
     action = action.lower()
     command = command.lower()
@@ -491,6 +494,7 @@ def handle_command(action, command):
 
     elif command == "help":
         if action == "start":
+            # Multi-line help text explaining key bindings and commands.
             response = """
             MOVEMENT              CAMERA HEAD
             w : Forward           i : Tilt up
@@ -501,7 +505,6 @@ def handle_command(action, command):
             p : Take photo        n : Show detection info
             q : Quit
             """
-
 
     # ---------- Optional quit ----------
     elif command in ("quit", "q"):
@@ -516,7 +519,11 @@ def handle_command(action, command):
 
 
 def cleanup():
-    """Clean up resources"""
+    """Clean up hardware and camera resources.
+
+    Stops the steering loop, centers the camera and steering, stops the car,
+    and closes the camera if it was started.
+    """
     global px, camera_started, running
 
     print("\nCleaning up...")
@@ -536,7 +543,13 @@ def cleanup():
 
 
 def get_ip_address():
-    """Get the Pi's IP address"""
+    """Get the Pi's primary IP address.
+
+    Uses the `hostname -I` command to read the list of IPs and returns the first.
+
+    Returns:
+        The primary IP address as a string, or "<pi-ip>" on failure.
+    """
     import subprocess
     try:
         result = subprocess.run(['hostname', '-I'], capture_output=True, text=True)
@@ -547,34 +560,35 @@ def get_ip_address():
 
 
 def main():
+    """Main entry point for the PiCar-X server.
+
+    Initializes the PiCar hardware and camera, starts background threads for
+    steering and simple obstacle avoidance, and then enters a loop accepting
+    client connections and processing their commands.
+    """
     global connection_socket, px, running
 
-    # Initialize PiCar first
+    # Initialize PiCar first.
     px = Picarx()
     px.set_cam_tilt_angle(0)
     px.set_cam_pan_angle(0)
 
-    # Start camera immediately so user can view it
+    # Start camera immediately so user can view it.
     print("Starting camera...")
     initialize_camera()
 
-    # toggle_face_detect()
-    # toggle_color_detect()
-
-    # Start steering thread
+    # Start steering thread.
     steer_thread = threading.Thread(target=steering_loop, daemon=True)
     steer_thread.start()
 
-    # Start simple obstacle avoidance thread
+    # Start simple obstacle avoidance thread.
     avoid_thread = threading.Thread(target=simple_avoidance, daemon=True)
     avoid_thread.start()
 
-
-
-    # Get IP address for display
+    # Get IP address for display.
     ip_addr = get_ip_address()
 
-    # Create server socket
+    # Create server socket.
     server_socket = socket(AF_INET, SOCK_STREAM)
     server_socket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     server_socket.bind(("", SERVER_PORT))
@@ -592,22 +606,25 @@ def main():
             connection_socket, addr = server_socket.accept()
             print(f"Client connected: {addr[0]}:{addr[1]}")
 
-            # Send welcome message
+            # Send welcome message containing camera URL.
             welcome = f"Connected! http://{ip_addr}:9000/mjpg"
             send_response(welcome)
 
             try:
-                # Reset line buffer for this connection
+                # Reset line buffer for this connection.
                 global recv_buffer
                 recv_buffer = b""
 
                 while True:
+                    # Read a single line command from the client.
                     text = recv_line(connection_socket)
                     if text is None:
+                        # Client disconnected.
                         break
 
                     text = text.strip()
                     if not text:
+                        # Ignore empty lines.
                         continue
 
                     print(f"Received from client: {text}")
@@ -621,21 +638,27 @@ def main():
                     action = parts[0]
                     command = parts[1]
 
+                    # Handle high-level command (speed/camera/etc.).
                     response, should_quit = handle_command(action, command)
+
+                    # Handle low-level drive logic using the raw text.
                     drive_loop(text)
+
+                    # Send full response (multiline-safe).
                     send_multiline(response)
 
                     if should_quit:
+                        # Perform cleanup and exit if the client requested shutdown.
                         cleanup()
                         connection_socket.close()
                         server_socket.close()
                         print("Server shutdown complete")
                         sys.exit(0)
 
-
             except Exception as e:
                 print(f"Error handling client: {e}")
             finally:
+                # Always stop the car and close the client socket on disconnect.
                 if px:
                     px.stop()
                 if connection_socket:
@@ -646,6 +669,7 @@ def main():
     finally:
         cleanup()
         server_socket.close()
+
 
 if __name__ == "__main__":
     try:
