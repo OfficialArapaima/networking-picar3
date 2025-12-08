@@ -435,14 +435,16 @@ def handle_command(action, command):
 
     elif command == "help":
         if action == "start":
-            response = """MOVEMENT              CAMERA HEAD
+            response = """
+            MOVEMENT              CAMERA HEAD
             w : Forward           i : Tilt up
             s : Backward          k : Tilt down
             a : Turn left         j : Pan left
             d : Turn right        l : Pan right
             UTILITY
             p : Take photo        n : Show detection info
-            q : Quit"""
+            q : Quit
+            """
 
 
     # ---------- Optional quit ----------
