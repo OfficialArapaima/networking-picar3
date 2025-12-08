@@ -22,7 +22,7 @@ avoidance_enabled = False
 
 # Obstacle Avoidance settings 
 power = 60
-safe_distance = 45
+safe_distance = 20
 warn_distance = 25
 stop_distance = 15
 turn_angle = 30
