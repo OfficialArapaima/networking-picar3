@@ -532,7 +532,6 @@ def main():
                 while True:
                     text = recv_line(connection_socket)
                     if text is None:
-                        print("Client disconnected")
                         break
 
                     text = text.strip()
