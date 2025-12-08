@@ -46,7 +46,7 @@ if welcome:
 
 
 # Keys physically available on the UI / keyboard
-available_keys = "wasxdikjl+-=_fcrpnhq"
+available_keys = "wasxdikjl+-=_rpnhq"
 
 # Commands (use UPPERCASE for letter keys as the canonical form)
 key_to_command = {
@@ -60,8 +60,6 @@ key_to_command = {
     "L": "cam_right",
     "=": "speed_increase",
     "-": "speed_decrease",
-    "F": "toggle_face",
-    "C": "toggle_color",
     "P": "take_photo",
     "N": "show_detect",
     "H": "help",
@@ -79,8 +77,6 @@ button_labels = {
     "L": "Camera Right",
     "=": "Increase Speed",
     "-": "Decrease Speed",
-    "F": "Toggle Face Detect",
-    "C": "Toggle Color Mode",
     "P": "Take Photo",
     "N": "Show Detection",
     "H": "Help",
@@ -90,7 +86,7 @@ button_labels = {
 CONTINUOUS_KEYS = {"W", "A", "S", "D", "I", "J", "K", "L", "=", "-"}
 
 # Keys that are toggles / one-shot (activate on release only)
-TOGGLE_KEYS = {"F", "C", "P", "N", "H"}
+TOGGLE_KEYS = {"P", "N", "H"}
 
 # Map logical key -> Qt key (for keyboard handling)
 KEY_TO_QT = {
@@ -104,8 +100,6 @@ KEY_TO_QT = {
     "L": Qt.Key_L,
     "=": Qt.Key_Equal,
     "-": Qt.Key_Minus,
-    "F": Qt.Key_F,
-    "C": Qt.Key_C,
     "P": Qt.Key_P,
     "N": Qt.Key_N,
     "H": Qt.Key_H,
@@ -212,7 +206,7 @@ class KeyboardControl(QWidget):
 
         other_column = QVBoxLayout()
         other_column.addWidget(other_label)
-        for key in ["F", "C", "P", "N", "H"]:
+        for key in ["P", "N", "H"]:
             if key in self.buttons:
                 other_column.addWidget(self.buttons[key])
 
