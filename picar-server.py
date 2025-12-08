@@ -19,10 +19,11 @@ color_detect_on = False
 detection_running = False
 face_detection_on = True
 avoidance_enabled = False
+is_moving_forward = False
 
 # Obstacle Avoidance settings 
 power = 60
-safe_distance = 20
+safe_distance = 8
 warn_distance = 25
 stop_distance = 15
 turn_angle = 30
@@ -333,23 +334,17 @@ def clamp(value, min_val, max_val):
 
 def simple_avoidance():
     """
-    Simple forward collision avoidance.
+    Forward collision avoidance that only intervenes
+    when the car is moving forward.
 
-    This runs in the background while `running` is True.
-    It does NOT try to drive the car on its own. Instead, it:
-      - Continuously reads the ultrasonic sensor.
-      - If an object is within `safe_distance` in front of the car,
-        it sends a "brake" command by calling px.forward(0),
-        which stops the motors regardless of current speed.
-
-    This way, you can still drive normally with your existing controls,
-    and this loop will only step in to stop you from hitting
-    something head-on.
+    - Reads the ultrasonic distance.
+    - If an object is within `safe_distance` and the car
+      is moving forward, it stops the motors.
+    - It does NOT interfere with backing up.
     """
-    global px, running
+    global px, running, is_moving_forward
 
     while running:
-        # If the car isn't initialized yet, just wait
         if px is None:
             sleep(0.1)
             continue
@@ -357,24 +352,26 @@ def simple_avoidance():
         try:
             distance = px.ultrasonic.read()
         except Exception:
-            # Sensor read failed; try again shortly
             sleep(0.1)
             continue
 
-        # Make sure distance is a sane number
+        # Convert to a usable float if possible
         if distance is not None:
             try:
                 distance = float(distance)
             except (TypeError, ValueError):
                 distance = None
 
-        if distance is not None and distance > 0:
-            # If we're too close to something in front, hit the brakes.
-            # You can still choose to back up with your normal controls.
-            if distance <= safe_distance:
-                px.forward(0)
+        if (
+            distance is not None
+            and distance > 0
+            and distance <= safe_distance
+            and is_moving_forward
+        ):
+            # Only stop if we were actually going forward
+            px.forward(0)
+            is_moving_forward = False  # we've just stopped
 
-        # Don't hammer the CPU
         sleep(0.05)
 
 """
@@ -395,20 +392,24 @@ def steering_loop():
 Loop that the car should use to handle the actual driving part. 
 """
 def drive_loop(data):
-    global target_angle, running, px, connection_socket
+    global target_angle, running, px, connection_socket, is_moving_forward
     match data:
         case 'start forward':
             px.forward(80)
+            is_moving_forward = True
         case 'start backward':
             px.backward(80)
+            is_moving_forward = False
         case 'start left':
             target_angle = -30
         case 'start right':
             target_angle = 30
         case 'stop forward':
             px.forward(0)
+            is_moving_forward = False
         case 'stop backward':
             px.forward(0)
+            is_moving_forward = False
         case 'stop left':
             target_angle = 0
         case 'stop right':
